@@ -4,7 +4,7 @@
 \alias{compile_density}
 \title{Compiles kernel density estimate}
 \usage{
-compile_density(x, bw, kernel = get_kernel("g"))
+compile_density(z, x, bw, kernel_code = "g")
 }
 \arguments{
 \item{x}{Data used for density estimation}
@@ -22,10 +22,11 @@ Compiles kernel density estimate
 \examples{
 set.seed(0)
 x <- rnorm(1000)
-dens_hat <- compile_density(x, 0.1)
+z <- seq(-3,3,0.01)
+dens_hat <- compile_density(z, x, 0.1)
 ggplot() +
   geom_histogram(aes(x = x, y = after_stat(density))) +
-  geom_line(aes(x = x, y = dens_hat(x)), color = "red")
+  geom_line(aes(x = z, y = dens_hat), color = "red")
 set.seed(NULL)
 
 }

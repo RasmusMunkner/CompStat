@@ -7,9 +7,10 @@
 iter_dens_est(
   x,
   maxiter = 3L,
-  f_0 = NULL,
-  kernel = get_kernel("gaussian"),
-  tol = 1e-07
+  kernel_code = "g",
+  bw0 = NULL,
+  tol = 1e-07,
+  reltol = 0.001
 )
 }
 \arguments{
@@ -17,14 +18,14 @@ iter_dens_est(
 
 \item{maxiter}{A positive integer. The maximal number of iterations}
 
+\item{tol}{A scalar. Tolerance level bandwidth selection convergence}
+
+\item{reltol}{A scalar. Relative tolerance for bandwidth selection convergence}
+
 \item{f_0}{A scalar function. Initial guess at the unknown density.
 Defaults to maximum-likelihood Gaussian density}
 
 \item{kernel}{A scalar function. The kernel used for smoothing}
-
-\item{tol}{A scalar. Tolerance level bandwidth selection convergence}
-
-\item{reltol}{A scalar. Relative tolerance for bandwidth selection convergence}
 }
 \value{
 A list of bandwidths/estimates for the unknown density.
@@ -32,7 +33,7 @@ A list of bandwidths/estimates for the unknown density.
 \description{
 Kernel-based density estimation with in-built bandwidth selection using AMISE.
 The method runs until convergence of bandwidth selection and returns all
-intermediate density and bandthwidth estimates.
+intermediate density and bandwidth estimates.
 }
 \examples{
 iter_dens_est(rnorm(1000))
