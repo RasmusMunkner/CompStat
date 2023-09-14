@@ -25,7 +25,7 @@ get_kernel <- function(kernel_code){
   )
   hessian <- switch(key,
          n= ,
-         g= function(z){z^2 * dnorm(z) - dnorm(z)},
+         g= function(z){(z^2 - 1) * dnorm(z)},
          u= ,
          r= function(z){rep(0, length(z))},
          t= function(z){rep(0, length(z))},
@@ -45,7 +45,7 @@ get_kernel <- function(kernel_code){
                   u = ,
                   r = 1/3,
                   t = 1/6,
-                  e = 4/15
+                  e = 1/5
                   )
   return(
     structure(
@@ -82,8 +82,19 @@ estimate_l2norm <- function(x, kernel_code, r){
   )$value
 }
 
+estimate_l2norm_approx <- function(x, kernel_code, r){
+  switch(kernel_code,
+         n = ,
+         g = 0,
+         u = ,
+         r = 0,
+         t = 0,
+         e = 1 / length(x)^2 / r^6 * (-3/2)^2 * sum(pmax(0, 2*r-abs(matrix(rep(x, length(x)), nrow=length(x)) - matrix(rep(x, length(x)), nrow=length(x), byrow=TRUE))))
+         )
+}
 
-
+r <- 10000
+mean(pmax(0, 2*r-abs(matrix(rep(x, length(x)), nrow=length(x)) - matrix(rep(x, length(x)), nrow=length(x), byrow=TRUE)))) / r^2
 
 
 

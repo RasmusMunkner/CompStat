@@ -76,7 +76,12 @@ replications <- dens %>%
   purrr::map(.f = function(d){
     tibble::tibble(
       x = d$x,
-      y = compile_density(d$x, F12, bw=d$bw, kernel_code="e")
+      y = compile_density(
+        d$x,
+        F12,
+        bw=d$bw / get_kernel("e")$sigma2^(1/2),
+        kernel_code="e"
+        )
     )
   })
 
@@ -94,31 +99,15 @@ Really, this is not too great. Should ask my TA.
 x <- rnorm(2^13)
 calls <- seq(5,13) %>% 
   purrr:::map(.f=function(z){
-    paste0("density(x[1:", 2^z, "], 0.2)") %>% 
-      parse(text=.)
+    call("density", x[1:2^z], bw=0.2)
   })
 names(calls) <- seq(5,13)
 results <- microbenchmark::microbenchmark(
-  calls[[1]],
-  calls[[2]],
-  calls[[3]],
-  calls[[4]],
-  calls[[5]],
-  calls[[6]],
-  calls[[7]],
-  calls[[8]],
-  calls[[9]],
-  times=10000
+  list=calls
 )
 autoplot(results)
 
-x1 <- rnorm(128)
-x2 <- rnorm(8196)
-microbenchmark::microbenchmark(density(x1, 0.2), density(x2, 0.2), calls[[1]])
-
 ```
-
-This aint great either. IDK why it does not work.
 
 # Exercise 2.5
 

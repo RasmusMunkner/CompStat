@@ -18,22 +18,23 @@ iter_dens_est(
 
 \item{maxiter}{A positive integer. The maximal number of iterations}
 
+\item{kernel_code}{One of "gaussian", "uniform", "triangular" or "epanechnikov".}
+
+\item{bw0}{A scalar. Initial guess at the optimal bandwidth.
+Defaults to maximum-likelihood Gaussian density}
+
 \item{tol}{A scalar. Tolerance level bandwidth selection convergence}
 
 \item{reltol}{A scalar. Relative tolerance for bandwidth selection convergence}
-
-\item{f_0}{A scalar function. Initial guess at the unknown density.
-Defaults to maximum-likelihood Gaussian density}
-
-\item{kernel}{A scalar function. The kernel used for smoothing}
 }
 \value{
-A list of bandwidths/estimates for the unknown density.
+A list of bandwidths for estimation of the unknown density.
+The final bandwidth represents the best-estimate for the optimal bandwidth.
 }
 \description{
 Kernel-based density estimation with in-built bandwidth selection using AMISE.
 The method runs until convergence of bandwidth selection and returns all
-intermediate density and bandwidth estimates.
+bandwidth estimates. To access density estimates, use compile_density.
 }
 \examples{
 iter_dens_est(rnorm(1000))
