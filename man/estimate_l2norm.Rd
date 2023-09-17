@@ -4,7 +4,7 @@
 \alias{estimate_l2norm}
 \title{Calculate an estimate of the L2-norm for the current kernel approximation}
 \usage{
-estimate_l2norm(x, kernel_code, r)
+estimate_l2norm(x, kernel_code, r, method = "running")
 }
 \arguments{
 \item{x}{The data used for estimation}

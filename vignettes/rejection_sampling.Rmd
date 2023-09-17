@@ -1,0 +1,61 @@
+---
+title: "Rejection Sampling"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Rejection Sampling}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(CompStat)
+```
+
+# Introduction
+This vignette serves as a general rundown of the rejection sampling module. This module implements the following functions:
+
+* Function X
+* Function Y
+* Function Z
+
+And they do stuff.
+
+# Implementing the target density
+We experimented with several different iterations of the density
+$$
+f(y) \propto \prod_{i=1}^{100} \exp(yx_iz_u - \exp(yx_i))
+$$
+To obtain a sense of which implementation would perform best, we implemented a simple benchmark. The following results were obtained:
+```{r, cache=TRUE}
+y <- seq(0.001, 1, 0.001)
+microbenchmark::microbenchmark(
+  rejec_dens1(y),
+  rejec_dens2(y),
+  rejec_dens3(y),
+  rejec_dens4(y),
+  rejec_dens5(y),
+  times=100
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

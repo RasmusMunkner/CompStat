@@ -1,0 +1,79 @@
+---
+title: "Density Estimation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Density Estimation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(CompStat)
+```
+
+# Introduction
+This vignette details the usage of the density-estimation module of the 'CompStat' package.
+
+The density estimation we implement here is based on kernel smoothers. The central functions are:
+
+* *iter_bw_est* - Iterative bandwidth selection using AMISE.
+* *compile_density* - Density estimation given a bandwidth and kernel.
+* *plot_density* - Combination of the above into a simple call with graphical output.
+
+In this vignette, we present our considerations for the development process of each of these components, although we will mainly be focusing on *iter_bw_est*.
+
+# Function breakdown
+## iter_bw_est
+The *iter_bw_est* function is based on the algorithm:
+
+1. Receive an initial bandwidth estimate $h_0$ or use the Silverman-rule for computing one.
+2. For $m = 1, \ldots, M$ do the following:
+  + Compute the best-estimate for the $L_2$-norm of the unknown density $f$
+  using the formula (NRH Chapter 2, Unnumbered equation):
+$$
+\left|\left|\tilde{f}''_m\right|\right|_2^2 = \frac{1}{n^2h_m^6} \sum_{i=1}^{n}\sum_{j=1}^n \int H''\left(\frac{x-x_i}{h_m}\right) \cdot H''\left(\frac{x-x_j}{h_m}\right) dx
+$$
+  + Compute the AMISE-optimal bandwidth using the update rule (NRH Chapter 2, Equation 2.3)
+$$
+h_{m+1} = \left(\frac{||K||_2^2}{||\tilde{f}_m''||_2^2\sigma_K^4}\right)^{1/5}n^{-1/5}
+$$
+3. Return the sequence of bandwidths $(h_0, \ldots, h_M$).
+
+The motivation for the algorithm is that (NRH Chapter 2, Equation 2.3) could be used to compute the optimal bandwidth if true $||f||_2^2$ is known. Since this is not the case, the above algorithm instead uses the current best-estimate for $||f||_2^2$ as a plug-in estimate. This leads to a sequence of optimal-given-the-previous bandwidths.
+
+This leaves the question of whether the sequence of bandwidth obtained will converge to or even approximate the true, optimal bandwidth. See section XXX for an investigation of this issue.
+
+## compile_density
+The *compile_density* algorithm is a rather simple wrapper around the formula:
+$$
+\hat{f}(x) = \frac{1}{nh}\sum_{i=1}^n H\left(\frac{x-x_i}{h}\right)
+$$
+Hence it serves to simply compute the estimated density once a bandwidth has been selected. We present two different implementations:
+* A simple, vectorized implementation.
+* A more complex implementation based on rolling means.
+These implementations are compared to one another and *stats::density* with respect to their estimates and runtime.
+
+## plot_density
+The *plot_density* density function serves as a graphical tool for determining if density estimates are conform with corresponding histogram representations. We perform no formal testing of this.
+
+# TODO
+* Implement CV stopping for *iter_dens_est*.
+* Write some benchmarks for the *iter_bw_est* function.
+* Write the alternative *compile_density* methods.
+
+
+
+
+
+
+
+
+
+

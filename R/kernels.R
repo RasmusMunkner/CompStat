@@ -14,8 +14,8 @@
 #' get_kernel("g")
 #' get_kernel("t")
 get_kernel <- function(kernel_code){
-  key <- kernel_code %>% substr(1,1) %>% tolower()
-  kernel <- switch(key,
+  kernel_code <- kernel_code %>% substr(1,1) %>% tolower()
+  kernel <- switch(kernel_code,
          n= ,
          g= dnorm,
          u= ,
@@ -23,7 +23,7 @@ get_kernel <- function(kernel_code){
          t= function(z){ifelse(abs(z)<1, 1-abs(z), 0)},
          e= function(z){ifelse(abs(z)<1, 3/4 * (1-z^2), 0)}
   )
-  hessian <- switch(key,
+  hessian <- switch(kernel_code,
          n= ,
          g= function(z){(z^2 - 1) * dnorm(z)},
          u= ,
@@ -31,7 +31,7 @@ get_kernel <- function(kernel_code){
          t= function(z){rep(0, length(z))},
          e= function(z){ifelse(abs(z) < 1, -3/2, 0)}
   )
-  l2norm <- switch(key,
+  l2norm <- switch(kernel_code,
                    n = ,
                    g = 1/(2*sqrt(pi)),
                    u = ,
@@ -39,7 +39,7 @@ get_kernel <- function(kernel_code){
                    t = 2/3,
                    e = 16/15
                    )
-  sigma2 <- switch(key,
+  sigma2 <- switch(kernel_code,
                   n = ,
                   g = 1,
                   u = ,
@@ -72,34 +72,25 @@ get_kernel <- function(kernel_code){
 #' @examples
 #' estimate_l2norm(1, "e", 1)
 #' estimate_l2norm(rnorm(100), "r", 0.9 * 100^(1/5))
-estimate_l2norm <- function(x, kernel_code, r){
-  n <- length(x)
-  H <- get_kernel(kernel_code)
-  1/(n^2 * r^6) * integrate(
-    Vectorize(function(z) sum(H$hessian((z-x)/r))^2),
-    lower = -Inf,
-    upper = Inf
-  )$value
+estimate_l2norm <- function(x, kernel_code, r, method = "running"){
+  kernel_code <- kernel_code %>% substr(1,1) %>% tolower()
+  if (kernel_code == "e"){
+    result <- switch(tolower(method),
+           matrix=epanechnikov_l2norm_matrix(x, r),
+           running=epanechnikov_l2norm_running(x, r),
+           binning=epanechnikov_l2norm_binning(x, r),
+           NULL
+           )
+  }
+  if (is.null(result)){
+    n <- length(x)
+    H <- get_kernel(kernel_code)
+    result <- 1/(n^2 * r^2) * integrate(
+      Vectorize(function(z) sum(H$hessian((z-x)/r)/r^2)^2),
+      lower = -Inf,
+      upper = Inf,
+      subdivisions = 500
+    )$value
+  }
+  return(result)
 }
-
-estimate_l2norm_approx <- function(x, kernel_code, r){
-  switch(kernel_code,
-         n = ,
-         g = 0,
-         u = ,
-         r = 0,
-         t = 0,
-         e = 1 / length(x)^2 / r^6 * (-3/2)^2 * sum(pmax(0, 2*r-abs(matrix(rep(x, length(x)), nrow=length(x)) - matrix(rep(x, length(x)), nrow=length(x), byrow=TRUE))))
-         )
-}
-
-r <- 10000
-mean(pmax(0, 2*r-abs(matrix(rep(x, length(x)), nrow=length(x)) - matrix(rep(x, length(x)), nrow=length(x), byrow=TRUE)))) / r^2
-
-
-
-
-
-
-
-
