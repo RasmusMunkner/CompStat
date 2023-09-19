@@ -3,7 +3,7 @@
 #'
 #' @param f A log-concave function.
 #' @param f_prime The derivative of f.
-#' @param tangent_points The points at which the envelope should be tanget to f.
+#' @param tangent_points The points at which the envelope should be tangent to f.
 #'
 #' @return A LogLinearEnvelope object.
 #' @export
@@ -12,11 +12,18 @@
 #' LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
 LogLinearEnvelope <- function(f, f_prime, tangent_points){
 
+  # Absolutely necessary quantities
   tangent_points <- sort(tangent_points)
   a <- f_prime(tangent_points) / f(tangent_points)
   b <- log(f(tangent_points)) - a * tangent_points
   cutpoints <- diff(-b) / diff(a)
-  envelope <- list(a=a, b=b,cutpoints=cutpoints, f = f)
+
+  # Extra quantities that are nice for simulation
+  R <- exp(b) / a * (exp(a*c(cutpoints, Inf)) - exp(a*c(-Inf, cutpoints)))
+  R <- dplyr::coalesce(R, exp(b) * (c(cutpoints,Inf) - c(-Inf, cutpoints)))
+  Q <- cumsum(R)
+
+  envelope <- list(a=a, b=b,cutpoints=cutpoints, f = f, R = R, Q = Q)
   class(envelope) <- "LogLinearEnvelope"
   return(envelope)
 }
@@ -107,4 +114,50 @@ plot.LogLinearEnvelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALS
 
   ggplot2::ggplot(plot_data, ggplot2::aes(x = x, y = y, color = what)) +
     ggplot2::geom_line()
+}
+
+#' Quantile function for LogLinearEnvelope
+#'
+#' @param p A vector evaluation points, each with 0 < p < 1.
+#' @param enve A LogLinearEnvelope.
+#'
+#' @return The quantiles of the envelope corresponding to p.
+#' @export
+#'
+#' @examples
+#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
+#' p <- 1:99 / 100
+#' q <- qLogLinearEnvelope(p, enve)
+#' ggplot(mapping = aes(x = q, y = p)) +
+#' geom_line() +
+#' geom_line(aes(y = pnorm(x)), color = "red")
+qLogLinearEnvelope <- function(p, enve){
+  if (!("LogLinearEnvelope" %in% class(enve))){
+    stop("The passed envelope is not of class 'LogLinearEnvelope'.")
+  }
+
+  i <- cut(Q[length(Q)]*p, Q)
+  Fx <- Q[length(Q)]*p - Q[as.integer(i)]
+  x <- log(enve$a[i]*Fx / exp(enve$b[i]) + exp(enve$a[i]*c(-Inf, enve$cutpoints)[i])) / enve$a[i]
+
+  # Handling cases with a[i] = 0
+  x %>%
+    dplyr::coalesce(Fx / exp(enve$b[i]) + c(-Inf, enve$cutpoints)[i])
+}
+
+#' Simulate from a LogLinearEnvelope
+#'
+#' @param n The number of simulations.
+#' @param enve A LogLinearEnvelope.
+#'
+#' @return A vector of the desired length containing simulations from the envelope.
+#' @export
+#'
+#' @examples
+#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
+#' y <- rLogLinearEnvelope(1000, enve)
+#' hist(y)
+rLogLinearEnvelope <- function(n, enve){
+  u <- runif(n)
+  qLogLinearEnvelope(u, enve)
 }
