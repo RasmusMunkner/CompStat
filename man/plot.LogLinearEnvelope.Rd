@@ -19,5 +19,5 @@ Plot a LogLinearEnvelope with the function is is an envelope to
 }
 \examples{
 enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-3, -1, 1, 3))
-plot(enve)
+sim_true
 }

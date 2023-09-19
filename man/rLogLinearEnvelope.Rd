@@ -19,6 +19,6 @@ Simulate from a LogLinearEnvelope
 }
 \examples{
 enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-y <- rLogLinearEnvelope(100, enve)
+y <- rLogLinearEnvelope(10000, enve)
 hist(y)
 }

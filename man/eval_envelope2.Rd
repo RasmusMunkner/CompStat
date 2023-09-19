@@ -4,7 +4,7 @@
 \alias{eval_envelope2}
 \title{Evalute a LogLinearEnvelope in a sequence of points}
 \usage{
-eval_envelope2(x, envelope)
+eval_envelope2(x, envelope, logscale = FALSE)
 }
 \arguments{
 \item{x}{The points to evaluate the envelope in.}

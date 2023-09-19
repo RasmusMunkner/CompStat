@@ -22,8 +22,9 @@ LogLinearEnvelope <- function(f, f_prime, tangent_points){
   R <- exp(b) / a * (exp(a*c(cutpoints, Inf)) - exp(a*c(-Inf, cutpoints)))
   R <- dplyr::coalesce(R, exp(b) * (c(cutpoints,Inf) - c(-Inf, cutpoints)))
   Q <- cumsum(R)
+  c <- Q[length(Q)]
 
-  envelope <- list(a=a, b=b,cutpoints=cutpoints, f = f, R = R, Q = Q)
+  envelope <- list(a=a, b=b,cutpoints=cutpoints, f = f, R = R, Q = Q, c = c)
   class(envelope) <- "LogLinearEnvelope"
   return(envelope)
 }
@@ -41,7 +42,7 @@ LogLinearEnvelope <- function(f, f_prime, tangent_points){
 #' @examples
 #' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
 #' eval_envelope1(seq(-3,3,0.1), enve)
-eval_envelope1 <- function(x, envelope){
+eval_envelope1 <- function(x, envelope, logscale = FALSE){
 
   if(!("LogLinearEnvelope" %in% class(envelope))){
     stop("The provided envelope is not of class 'LogLinearEnvelope'")
@@ -49,10 +50,17 @@ eval_envelope1 <- function(x, envelope){
 
   section <- as.integer(cut(x, breaks=c(-Inf, envelope$cutpoints, Inf)))
 
-  list(x = x, i = section) %>%
+  log_y <- list(x = x, i = section) %>%
     purrr::pmap_dbl(.f=function(x,i){
       envelope$a[i]*x + envelope$b[i]
     })
+
+  if (logscale){
+    log_y
+  } else {
+    exp(log_y)
+  }
+
 }
 
 #' Evalute a LogLinearEnvelope in a sequence of points
@@ -67,7 +75,7 @@ eval_envelope1 <- function(x, envelope){
 #' @examples
 #' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
 #' eval_envelope2(seq(-3,3,0.1), enve)
-eval_envelope2 <- function(x, envelope){
+eval_envelope2 <- function(x, envelope, logscale=FALSE){
 
   if(!("LogLinearEnvelope" %in% class(envelope))){
     stop("The provided envelope is not of class 'LogLinearEnvelope'")
@@ -76,11 +84,18 @@ eval_envelope2 <- function(x, envelope){
   section <- as.integer(cut(x, breaks=c(-Inf, envelope$cutpoints, Inf)))
   x_part <- split(x, section)
 
-  seq_along(x_part) %>%
+  log_y <- seq_along(x_part) %>%
     purrr::map(.f=function(i){
       envelope$a[i] * x_part[[i]] + envelope$b[i]
     }) %>%
     purrr::reduce(c)
+
+  if (logscale){
+    log_y
+  } else {
+    exp(log_y)
+  }
+
 }
 
 #' Plot a LogLinearEnvelope with the function is is an envelope to
@@ -93,20 +108,20 @@ eval_envelope2 <- function(x, envelope){
 #'
 #' @examples
 #' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-3, -1, 1, 3))
-#' plot(enve)
+#' sim_true
 plot.LogLinearEnvelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALSE){
 
   if (logscale){
     plot_data <- tibble::tibble(
       x = grid,
       f = log(enve$f(grid)),
-      envelope = eval_envelope2(grid, enve)
+      envelope = eval_envelope2(grid, enve, logscale)
     )
   } else {
     plot_data <- tibble::tibble(
       x = grid,
       f = enve$f(grid),
-      envelope = exp(eval_envelope2(grid, enve))
+      envelope = eval_envelope2(grid, enve, logscale)
     )
   }
   plot_data <- plot_data %>%
@@ -136,6 +151,7 @@ qLogLinearEnvelope <- function(p, enve){
     stop("The passed envelope is not of class 'LogLinearEnvelope'.")
   }
 
+  Q <- c(0, enve$Q)
   i <- cut(Q[length(Q)]*p, Q)
   Fx <- Q[length(Q)]*p - Q[as.integer(i)]
   x <- log(enve$a[i]*Fx / exp(enve$b[i]) + exp(enve$a[i]*c(-Inf, enve$cutpoints)[i])) / enve$a[i]
@@ -155,7 +171,7 @@ qLogLinearEnvelope <- function(p, enve){
 #'
 #' @examples
 #' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-#' y <- rLogLinearEnvelope(1000, enve)
+#' y <- rLogLinearEnvelope(10000, enve)
 #' hist(y)
 rLogLinearEnvelope <- function(n, enve){
   u <- runif(n)
