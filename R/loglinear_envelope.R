@@ -9,93 +9,61 @@
 #' @export
 #'
 #' @examples
-#' LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
+#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
 LogLinearEnvelope <- function(f, f_prime, tangent_points){
+
+  # Checks if the tangent points are valid
+  # They must all reside within the support of f
+  # Could potentially be generalized, but hardly seems worth the effort
+  if (sum(f(tangent_points) <= 0) > 0){
+    stop("The density f is nonpositive at one or more of the supplied points.")
+  }
 
   # Absolutely necessary quantities
   tangent_points <- sort(tangent_points)
   a <- f_prime(tangent_points) / f(tangent_points)
   b <- log(f(tangent_points)) - a * tangent_points
-  cutpoints <- diff(-b) / diff(a)
+  z <- diff(-b) / diff(a)
 
   # Extra quantities that are nice for simulation
-  R <- exp(b) / a * (exp(a*c(cutpoints, Inf)) - exp(a*c(-Inf, cutpoints)))
-  R <- dplyr::coalesce(R, exp(b) * (c(cutpoints,Inf) - c(-Inf, cutpoints)))
+  R <- exp(b) / a * (exp(a*c(z, Inf)) - exp(a*c(-Inf, z)))
+  R <- dplyr::coalesce(R, exp(b) * (c(z,Inf) - c(-Inf, z)))
   Q <- cumsum(R)
   c <- Q[length(Q)]
 
-  envelope <- list(a=a, b=b,cutpoints=cutpoints, f = f, R = R, Q = Q, c = c)
-  class(envelope) <- "LogLinearEnvelope"
+  # Evaluation and simulation
+  eval_envelope <- function(x){
+    section <- cut(x, breaks=c(-Inf, envelope$z, Inf))
+    exp(envelope$a[section] * x + envelope$b[section])
+  }
+
+  # Quantile function
+  quantile <- function(p){
+    Q <- c(0, enve$Q)
+    i <- cut(Q[length(Q)]*p, Q)
+    Fx <- Q[length(Q)]*p - Q[as.integer(i)]
+    x <- log(enve$a[i]*Fx / exp(enve$b[i]) + exp(enve$a[i]*c(-Inf, enve$z)[i])) / enve$a[i]
+
+    # Handling cases with a[i] = 0
+    x %>%
+      dplyr::coalesce(Fx / exp(enve$b[i]) + c(-Inf, enve$z)[i])
+  }
+
+  # Simulation
+  sim <- function(n){
+    u <- runif(n)
+    quantile(u)
+  }
+
+  envelope <- list(
+    a=a, b=b, z=z, R = R, Q = Q, c = c,
+    g = eval_envelope,
+    f = f,
+    quantile = quantile,
+    sim = sim
+  )
+  class(envelope) <- c("LogLinearEnvelope", "Envelope")
   return(envelope)
-}
-
-#' Evalute a LogLinearEnvelope in a sequence of points
-#'
-#' This implementation is particularly slow.
-#'
-#' @param x The points to evaluate the envelope in.
-#' @param envelope The envelope.
-#'
-#' @return The values of envelope(x).
-#' @export
-#'
-#' @examples
-#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-#' eval_envelope1(seq(-3,3,0.1), enve)
-eval_envelope1 <- function(x, envelope, logscale = FALSE){
-
-  if(!("LogLinearEnvelope" %in% class(envelope))){
-    stop("The provided envelope is not of class 'LogLinearEnvelope'")
-  }
-
-  section <- as.integer(cut(x, breaks=c(-Inf, envelope$cutpoints, Inf)))
-
-  log_y <- list(x = x, i = section) %>%
-    purrr::pmap_dbl(.f=function(x,i){
-      envelope$a[i]*x + envelope$b[i]
-    })
-
-  if (logscale){
-    log_y
-  } else {
-    exp(log_y)
-  }
-
-}
-
-#' Evalute a LogLinearEnvelope in a sequence of points
-#'
-#' This implementation is relatively fast.
-#'
-#' @inheritParams eval_envelope1
-#'
-#' @return The values of envelope(x).
-#' @export
-#'
-#' @examples
-#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-#' eval_envelope2(seq(-3,3,0.1), enve)
-eval_envelope2 <- function(x, envelope, logscale=FALSE){
-
-  if(!("LogLinearEnvelope" %in% class(envelope))){
-    stop("The provided envelope is not of class 'LogLinearEnvelope'")
-  }
-
-  section <- as.integer(cut(x, breaks=c(-Inf, envelope$cutpoints, Inf)))
-  x_part <- split(x, section)
-
-  log_y <- seq_along(x_part) %>%
-    purrr::map(.f=function(i){
-      envelope$a[i] * x_part[[i]] + envelope$b[i]
-    }) %>%
-    purrr::reduce(c)
-
-  if (logscale){
-    log_y
-  } else {
-    exp(log_y)
-  }
-
 }
 
 #' Plot a LogLinearEnvelope with the function is is an envelope to
@@ -108,20 +76,21 @@ eval_envelope2 <- function(x, envelope, logscale=FALSE){
 #'
 #' @examples
 #' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-3, -1, 1, 3))
-#' sim_true
-plot.LogLinearEnvelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALSE){
+#' plot(enve)
+#' plot(enve, logscale=TRUE)
+plot.Envelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALSE){
 
   if (logscale){
     plot_data <- tibble::tibble(
       x = grid,
       f = log(enve$f(grid)),
-      envelope = eval_envelope2(grid, enve, logscale)
+      envelope = log(enve$g(grid))
     )
   } else {
     plot_data <- tibble::tibble(
       x = grid,
       f = enve$f(grid),
-      envelope = eval_envelope2(grid, enve, logscale)
+      envelope = enve$g(grid)
     )
   }
   plot_data <- plot_data %>%
@@ -129,51 +98,4 @@ plot.LogLinearEnvelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALS
 
   ggplot2::ggplot(plot_data, ggplot2::aes(x = x, y = y, color = what)) +
     ggplot2::geom_line()
-}
-
-#' Quantile function for LogLinearEnvelope
-#'
-#' @param p A vector evaluation points, each with 0 < p < 1.
-#' @param enve A LogLinearEnvelope.
-#'
-#' @return The quantiles of the envelope corresponding to p.
-#' @export
-#'
-#' @examples
-#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-#' p <- 1:99 / 100
-#' q <- qLogLinearEnvelope(p, enve)
-#' ggplot(mapping = aes(x = q, y = p)) +
-#' geom_line() +
-#' geom_line(aes(y = pnorm(x)), color = "red")
-qLogLinearEnvelope <- function(p, enve){
-  if (!("LogLinearEnvelope" %in% class(enve))){
-    stop("The passed envelope is not of class 'LogLinearEnvelope'.")
-  }
-
-  Q <- c(0, enve$Q)
-  i <- cut(Q[length(Q)]*p, Q)
-  Fx <- Q[length(Q)]*p - Q[as.integer(i)]
-  x <- log(enve$a[i]*Fx / exp(enve$b[i]) + exp(enve$a[i]*c(-Inf, enve$cutpoints)[i])) / enve$a[i]
-
-  # Handling cases with a[i] = 0
-  x %>%
-    dplyr::coalesce(Fx / exp(enve$b[i]) + c(-Inf, enve$cutpoints)[i])
-}
-
-#' Simulate from a LogLinearEnvelope
-#'
-#' @param n The number of simulations.
-#' @param enve A LogLinearEnvelope.
-#'
-#' @return A vector of the desired length containing simulations from the envelope.
-#' @export
-#'
-#' @examples
-#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-#' y <- rLogLinearEnvelope(10000, enve)
-#' hist(y)
-rLogLinearEnvelope <- function(n, enve){
-  u <- runif(n)
-  qLogLinearEnvelope(u, enve)
 }

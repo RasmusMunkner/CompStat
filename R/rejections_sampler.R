@@ -1,14 +1,11 @@
 
 
-#' Slow rejection sampling for LogLinearEnvelopes
+#' Slow rejection sampling for arbitrary envelope
 #'
 #' This method is abysmally slow and was only implemented to provide a baseline.
 #'
-#' #' Currently, something is clearly wrong with this implementation.
-#' WORK IN PROGRESS.
-#'
 #' @param n The number of simulations.
-#' @param enve A LogLinearEnvelope.
+#' @param enve An object of class 'Envelope'.
 #' @param alpha
 #'
 #' @return Simulations from the distribution that the envelope is based on.
@@ -17,14 +14,14 @@
 #' @examples
 #' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
 #' rejection_sampler_naive(10, enve)
-rejection_sample_naive <- function(n, enve){
-  alpa <- 1/enve$c
+rejection_sampler_naive <- function(n, enve){
+  alpha <- 1/enve$c
   y_vec <- vector("numeric")
   n_sim <- 1
   while (n_sim <= n){
     U <- runif(1)
-    Y <- rLogLinearEnvelope(1, enve)
-    if (U <= alpha * enve$f(Y) / eval_envelope2(Y, enve)){
+    Y <- enve$sim(1)
+    if (U <= alpha * enve$f(Y) / enve$g(Y)){
       y_vec[n_sim] <- Y
       n_sim <- n_sim + 1
     }
@@ -32,29 +29,42 @@ rejection_sample_naive <- function(n, enve){
   y_vec
 }
 
-#' Compile rejection samplers for LogLinearEnvelopes
+#' Compile rejection samplers for arbitrary envelope
 #'
-#' Currently, something is clearly wrong with this implementation.
-#' WORK IN PROGRESS.
-#'
-#' @param enve A logLinearEnvelope \eqn{g}.
+#' @param enve An object of class 'Envelope'.
 #' @param alpha A scalar value ensuring \eqn{\alpha f \leq g}.
 #'
 #' @return A rejection sampler for the given envelope.
 #' @export
 #'
 #' @examples
+#' #Normal Distribution
 #' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-#' sampler <- rejection_sample_factory(enve, 1/enve$c)
-#' sim <- sampler(5000)
-#' hist(sim)
+#' sampler <- rejection_sampler_factory(enve)
+#' sim <- sampler(50000)
+#' hist(sim, prob=TRUE)
+#' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
 #' qqnorm(sim)
 #' qqline(sim)
+#' shapiro.test(sim[1:5000])
 #' environment(sampler)$p
 #' environment(sampler)$credibility
-rejection_sample_factory <- function(enve, alpha = NULL){
-  if (is.null(alpha)){
+#'
+#' #Gamma Distribution
+#' enve <- LogLinearEnvelope(
+#'   function(z){dgamma(z,2)},
+#'   function(z){dgamma(z,2) / z - dgamma(z, 2)},
+#'   c(0.5, 2, 4.5)
+#' )
+#' sampler <- rejection_sampler_factory(enve)
+#' sim <- sampler(50000)
+#' hist(sim, prob=TRUE)
+#' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+rejection_sampler_factory <- function(enve, alpha = NULL){
+  if (is.null(alpha) & "LogLinearEnvelope" %in% class(enve)){
     alpha <- 1/enve$c
+  } else if (is.null(alpha)) {
+    stop("For a general envelope, you must specify an appropriate alpha.")
   }
   p <- alpha
   credibility <- 20 # Arbitrary
@@ -65,8 +75,8 @@ rejection_sample_factory <- function(enve, alpha = NULL){
 
       # Calculate RV's
       U <- runif(ceiling((n - n_sim)/p))
-      Y <- rLogLinearEnvelope(ceiling((n - n_sim)/p), enve)
-      Y_accept <- Y[U <= alpha * enve$f(Y) / eval_envelope2(Y, enve)]
+      Y <- enve$sim(ceiling((n - n_sim)/p))
+      Y_accept <- Y[U <= alpha * enve$f(Y) / enve$g(Y)]
 
       # Store simulations
       if (length(Y_accept) >= 1){
@@ -85,3 +95,5 @@ rejection_sample_factory <- function(enve, alpha = NULL){
     sim
   }
 }
+
+

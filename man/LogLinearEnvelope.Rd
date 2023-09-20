@@ -20,5 +20,5 @@ A LogLinearEnvelope object.
 Envelopes for log-concave distributions
 }
 \examples{
-LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
+enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
 }
