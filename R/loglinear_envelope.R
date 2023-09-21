@@ -33,15 +33,15 @@ LogLinearEnvelope <- function(f, f_prime, tangent_points){
 
   # Evaluation and simulation
   eval_envelope <- function(x){
-    section <- cut(x, breaks=c(-Inf, envelope$z, Inf))
-    exp(envelope$a[section] * x + envelope$b[section])
+    section <- cut(x, label = FALSE, breaks=c(-Inf, z, Inf))
+    exp(a[section] * x + b[section])
   }
 
   # Quantile function
   quant <- function(p){
     Q <- c(0, Q)
-    i <- cut(Q[length(Q)]*p, Q)
-    Fx <- Q[length(Q)]*p - Q[as.integer(i)]
+    i <- cut(Q[length(Q)]*p, Q, labels=FALSE)
+    Fx <- Q[length(Q)]*p - Q[i]
     x <- log(a[i]*Fx / exp(b[i]) + exp(a[i]*c(-Inf, z)[i])) / a[i]
 
     # Handling cases with a[i] = 0
