@@ -60,11 +60,19 @@ rejection_sampler_naive <- function(n, enve){
 #' sim <- sampler(50000)
 #' hist(sim, prob=TRUE)
 #' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+#'
+#' # Laplacian Envelope
+#' enve <- LaplaceEnvelope(dnorm, sim_method = 2)
+#' sampler <- rejection_sampler_factory(enve)
+#' sim <- sampler(50000)
+#' hist(sim, prob=TRUE)
+#' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
 rejection_sampler_factory <- function(enve, alpha = NULL){
   if (is.null(alpha) & "LogLinearEnvelope" %in% class(enve)){
     alpha <- 1/enve$c
   } else if (is.null(alpha)) {
-    stop("For a general envelope, you must specify an appropriate alpha.")
+    warning("Since no alpha was specified, we assume alpha = 1.")
+    alpha <- 1
   }
   p <- alpha
   credibility <- 20 # Arbitrary
