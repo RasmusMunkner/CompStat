@@ -38,29 +38,30 @@ LogLinearEnvelope <- function(f, f_prime, tangent_points){
   }
 
   # Quantile function
-  quantile <- function(p){
-    Q <- c(0, enve$Q)
+  quant <- function(p){
+    Q <- c(0, Q)
     i <- cut(Q[length(Q)]*p, Q)
     Fx <- Q[length(Q)]*p - Q[as.integer(i)]
-    x <- log(enve$a[i]*Fx / exp(enve$b[i]) + exp(enve$a[i]*c(-Inf, enve$z)[i])) / enve$a[i]
+    x <- log(a[i]*Fx / exp(b[i]) + exp(a[i]*c(-Inf, z)[i])) / a[i]
 
     # Handling cases with a[i] = 0
     x %>%
-      dplyr::coalesce(Fx / exp(enve$b[i]) + c(-Inf, enve$z)[i])
+      dplyr::coalesce(Fx / exp(b[i]) + c(-Inf, z)[i])
   }
 
   # Simulation
   sim <- function(n){
     u <- runif(n)
-    quantile(u)
+    quant(u)
   }
 
   envelope <- list(
-    a=a, b=b, z=z, R = R, Q = Q, c = c,
+    a=a, b=b, z=z, R = R, Q = Q,
     g = eval_envelope,
     f = f,
-    quantile = quantile,
-    sim = sim
+    quant = quant,
+    sim = sim,
+    alpha = 1/c
   )
   class(envelope) <- c("LogLinearEnvelope", "Envelope")
   return(envelope)

@@ -2,6 +2,8 @@
 
 S3method(plot,Envelope)
 export("%>%")
+export(GaussianEnvelope)
+export(LaplaceEnvelope)
 export(LogLinearEnvelope)
 export(compile_density)
 export(epanechnikov_l2norm_binning)

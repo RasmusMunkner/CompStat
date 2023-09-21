@@ -45,25 +45,13 @@ microbenchmark::microbenchmark(
 )
 ```
 # Implementing log-linear envelopes
-Let benchmark some loglilear-envelope implementations:
-
-```{r}
-enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-1.5, 0, 1.5))
-grid <- seq(-6,6,0.001)
-
-microbenchmark::microbenchmark(
-  eval_envelope1(grid, enve),
-  eval_envelope2(grid, enve)
-)
-```
+Let benchmark some loglinear-envelope implementations:
 
 ```{r}
 enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-1.5, 0, 1.5))
 grid <- seq(-6,6,0.001)
 microbenchmark::microbenchmark(
-  eval_envelope1(grid, enve),
-  eval_envelope2(grid, enve),
-  eval_envelope2(grid, enve, TRUE)
+  enve$g(grid)
 )
 ```
 

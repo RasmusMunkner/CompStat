@@ -67,14 +67,8 @@ rejection_sampler_naive <- function(n, enve){
 #' sim <- sampler(50000)
 #' hist(sim, prob=TRUE)
 #' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
-rejection_sampler_factory <- function(enve, alpha = NULL){
-  if (is.null(alpha) & "LogLinearEnvelope" %in% class(enve)){
-    alpha <- 1/enve$c
-  } else if (is.null(alpha)) {
-    warning("Since no alpha was specified, we assume alpha = 1.")
-    alpha <- 1
-  }
-  p <- alpha
+rejection_sampler_factory <- function(enve){
+  p <- enve$alpha
   credibility <- 20 # Arbitrary
   rejection_sampler <- function(n, train = TRUE){
     sim <- vector("numeric", n)
@@ -84,7 +78,7 @@ rejection_sampler_factory <- function(enve, alpha = NULL){
       # Calculate RV's
       U <- runif(ceiling((n - n_sim)/p))
       Y <- enve$sim(ceiling((n - n_sim)/p))
-      Y_accept <- Y[U <= alpha * enve$f(Y) / enve$g(Y)]
+      Y_accept <- Y[U <= enve$alpha * enve$f(Y) / enve$g(Y)]
 
       # Store simulations
       if (length(Y_accept) >= 1){

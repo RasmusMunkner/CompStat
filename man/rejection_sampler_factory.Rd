@@ -4,7 +4,7 @@
 \alias{rejection_sampler_factory}
 \title{Compile rejection samplers for arbitrary envelope}
 \usage{
-rejection_sampler_factory(enve, alpha = NULL)
+rejection_sampler_factory(enve)
 }
 \arguments{
 \item{enve}{An object of class 'Envelope'.}
@@ -36,6 +36,13 @@ enve <- LogLinearEnvelope(
   function(z){dgamma(z,2) / z - dgamma(z, 2)},
   c(0.5, 2, 4.5)
 )
+sampler <- rejection_sampler_factory(enve)
+sim <- sampler(50000)
+hist(sim, prob=TRUE)
+curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+
+# Laplacian Envelope
+enve <- LaplaceEnvelope(dnorm, sim_method = 2)
 sampler <- rejection_sampler_factory(enve)
 sim <- sampler(50000)
 hist(sim, prob=TRUE)

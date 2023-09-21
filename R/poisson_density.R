@@ -74,3 +74,8 @@ rejec_dens5 <- function(y){
   exp(term1 - term2)
 }
 
+
+
+
+
+
