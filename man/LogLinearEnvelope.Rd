@@ -4,12 +4,10 @@
 \alias{LogLinearEnvelope}
 \title{Envelopes for log-concave distributions}
 \usage{
-LogLinearEnvelope(f, f_prime, tangent_points)
+LogLinearEnvelope(rv, tangent_points = NULL)
 }
 \arguments{
-\item{f}{A log-concave function.}
-
-\item{f_prime}{The derivative of f.}
+\item{rv}{An object created by RandomVariable.}
 
 \item{tangent_points}{The points at which the envelope should be tangent to f.}
 }
@@ -20,5 +18,7 @@ A LogLinearEnvelope object.
 Envelopes for log-concave distributions
 }
 \examples{
-enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
+enve <- LogLinearEnvelope(get_rv(), c(-2,0,1))
+enve <- LogLinearEnvelope(get_rv("n"))
+enve <- LogLinearEnvelope(get_rv("g"))
 }

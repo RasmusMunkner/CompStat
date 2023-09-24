@@ -18,7 +18,7 @@ A ggplot-object.
 Plot a LogLinearEnvelope with the function is is an envelope to
 }
 \examples{
-enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-3, -1, 1, 3))
+enve <- LogLinearEnvelope(get_rv(), c(-2,0,1))
 plot(enve)
 plot(enve, logscale=TRUE)
 }

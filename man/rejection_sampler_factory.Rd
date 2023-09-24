@@ -4,7 +4,7 @@
 \alias{rejection_sampler_factory}
 \title{Compile rejection samplers for arbitrary envelope}
 \usage{
-rejection_sampler_factory(enve)
+rejection_sampler_factory(enve, evalmode = 0)
 }
 \arguments{
 \item{enve}{An object of class 'Envelope'.}
@@ -19,11 +19,15 @@ Compile rejection samplers for arbitrary envelope
 }
 \examples{
 #Normal Distribution
-enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
+enve <- LogLinearEnvelope(get_rv(), c(-2,0,1))
 sampler <- rejection_sampler_factory(enve)
+new_sampler <- rejection_sampler_factory(enve)
 sim <- sampler(50000)
+plot(enve)
+sampler(5000000, adapt_enve = T)
+sampler \%>\% environment \%>\% `[[`("enve") \%>\% plot()
 hist(sim, prob=TRUE)
-curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+curve(enve$base_rv$f(x), -3, 3, col="blue", add=TRUE)
 qqnorm(sim)
 qqline(sim)
 shapiro.test(sim[1:5000])

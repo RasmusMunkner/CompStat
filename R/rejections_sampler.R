@@ -39,11 +39,15 @@ rejection_sampler_naive <- function(n, enve){
 #'
 #' @examples
 #' #Normal Distribution
-#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
+#' enve <- LogLinearEnvelope(get_rv(), c(-2,0,1))
 #' sampler <- rejection_sampler_factory(enve)
+#' new_sampler <- rejection_sampler_factory(enve)
 #' sim <- sampler(50000)
+#' plot(enve)
+#' sampler(5000000, adapt_enve = T)
+#' sampler %>% environment %>% `[[`("enve") %>% plot()
 #' hist(sim, prob=TRUE)
-#' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+#' curve(enve$base_rv$f(x), -3, 3, col="blue", add=TRUE)
 #' qqnorm(sim)
 #' qqline(sim)
 #' shapiro.test(sim[1:5000])
@@ -67,18 +71,50 @@ rejection_sampler_naive <- function(n, enve){
 #' sim <- sampler(50000)
 #' hist(sim, prob=TRUE)
 #' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
-rejection_sampler_factory <- function(enve){
+rejection_sampler_factory <- function(enve, evalmode = 0){
   p <- enve$alpha
-  credibility <- 20 # Arbitrary
-  rejection_sampler <- function(n, train = TRUE){
+  credibility <- 1#20 # Arbitrary
+  rejection_sampler <- function(n, env = NULL, train = TRUE, adapt_enve = FALSE){
+    if (is.null(env)){
+      env <- enve
+    }
     sim <- vector("numeric", n)
     n_sim <- 0
     while (n_sim < n){
 
       # Calculate RV's
-      U <- runif(ceiling((n - n_sim)/p))
-      Y <- enve$sim(ceiling((n - n_sim)/p))
-      Y_accept <- Y[U <= enve$alpha * enve$f(Y) / enve$g(Y)]
+      Y <- env$sim(ceiling((n - n_sim)/p))
+      if (evalmode == 0){
+        U <- runif(ceiling((n - n_sim)/p))
+        x1 <- env$alpha
+        x2 <- env$base_rv$f(Y)
+        x3 <- env$f(Y)
+        filter <- U <= x1 * x2 / x3
+        Y_accept <- Y[filter]
+      } else if (evalmode == 1) {
+        U <- runif(ceiling((n - n_sim)/p))
+        x1 <- log(enve$alpha)
+        x2 <- env$base_rv$log_f(Y)
+        x3 <- env$log_f(Y)
+        filter <- log(U) <= x1 + x2 - x3
+        Y_accept <- Y[filter]
+      } else if (evalmode == 2){
+        E <- rexp(ceiling((n - n_sim)/p))
+        x1 <- log(env$alpha)
+        x2 <- env$base_rv$log_f(Y)
+        x3 <- env$log_f(Y)
+        filter <- -E <= x1 + x2 - x3
+        Y_accept <- Y[filter]
+      }
+
+      if ("LogLinearEnvelope" %in% class(enve) & adapt_enve & sum(!filter) > 15){
+        browser()
+        Y_reject_dens <- Y[!filter] %>% sample(min(1e5, length(.))) %>% density(bw="SJ")
+        update_point <- sample(Y_reject_dens$x, size = 1, prob = (Y_reject_dens$y)^3 / sum((Y_reject_dens$y)^3))
+        enve <<- update(enve, tangent_points = c(enve$tangent_points, update_point))
+        env <- enve
+      }
+
 
       # Store simulations
       if (length(Y_accept) >= 1){

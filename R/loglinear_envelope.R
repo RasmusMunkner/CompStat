@@ -1,28 +1,35 @@
 
 #' Envelopes for log-concave distributions
 #'
-#' @param f A log-concave function.
-#' @param f_prime The derivative of f.
+#' @param rv An object created by RandomVariable.
 #' @param tangent_points The points at which the envelope should be tangent to f.
 #'
 #' @return A LogLinearEnvelope object.
 #' @export
 #'
 #' @examples
-#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-LogLinearEnvelope <- function(f, f_prime, tangent_points){
+#' enve <- LogLinearEnvelope(get_rv(), c(-2,0,1))
+#' enve <- LogLinearEnvelope(get_rv("n"))
+#' enve <- LogLinearEnvelope(get_rv("g"))
+LogLinearEnvelope <- function(rv, tangent_points = NULL){
+
+  if (is.null(tangent_points)){
+    #Tries to find the
+    #browser()
+    tangent_points <- uniroot(rv$log_f_prime, interval = c(-5, 5), extendInt = "y")$root + c(-1,1)
+  }
 
   # Checks if the tangent points are valid
   # They must all reside within the support of f
   # Could potentially be generalized, but hardly seems worth the effort
-  if (sum(f(tangent_points) <= 0) > 0){
+  if (sum(rv$f(tangent_points) <= 0) > 0){
     stop("The density f is nonpositive at one or more of the supplied points.")
   }
 
   # Absolutely necessary quantities
   tangent_points <- sort(tangent_points)
-  a <- f_prime(tangent_points) / f(tangent_points)
-  b <- log(f(tangent_points)) - a * tangent_points
+  a <- rv$log_f_prime(tangent_points)
+  b <- rv$log_f(tangent_points) - a * tangent_points
   z <- diff(-b) / diff(a)
 
   # Extra quantities that are nice for simulation
@@ -30,19 +37,28 @@ LogLinearEnvelope <- function(f, f_prime, tangent_points){
   R <- dplyr::coalesce(R, exp(b) * (c(z,Inf) - c(-Inf, z)))
   Q <- cumsum(R)
   c <- Q[length(Q)]
+  eb <- exp(b)
+  eaz <- exp(a * c(-Inf, z))
 
   # Evaluation and simulation
   eval_envelope <- function(x){
     section <- cut(x, label = FALSE, breaks=c(-Inf, z, Inf))
-    exp(a[section] * x + b[section])
+    a[section] * x + b[section]
   }
 
-  # Quantile function
+  # Quantile function (This could potentially be improved a lot)
   quant <- function(p){
     Q <- c(0, Q)
     i <- cut(Q[length(Q)]*p, Q, labels=FALSE)
     Fx <- Q[length(Q)]*p - Q[i]
-    x <- log(a[i]*Fx / exp(b[i]) + exp(a[i]*c(-Inf, z)[i])) / a[i]
+    aF <- a[i]*Fx
+    aFb <- aF / exp(b[i])
+    aFb <- aF / eb[i]
+    zTrunc <- c(-Inf, z)[i]
+    aZ <- exp(a[i]*zTrunc)
+    aZ <- eaz[i]
+    almost <-  log(aFb + aZ)
+    x <- almost / a[i]
 
     # Handling cases with a[i] = 0
     x %>%
@@ -55,16 +71,51 @@ LogLinearEnvelope <- function(f, f_prime, tangent_points){
     quant(u)
   }
 
-  envelope <- list(
-    a=a, b=b, z=z, R = R, Q = Q,
-    g = eval_envelope,
-    f = f,
-    quant = quant,
-    sim = sim,
-    alpha = 1/c
+  envelope_rv <- RandomVariable(log_f = eval_envelope)
+
+  envelope <- structure(
+    list(
+      a=a, b=b, z=z, R = R, Q = Q, #LogLinearEnvelope Fields
+      tangent_points = tangent_points,
+      quant = quant,
+      base_rv = rv, # Envelope fields
+      sim = sim,
+      alpha = 1/c,
+      f = envelope_rv$f, # RandomVariable fields
+      log_f = envelope_rv$log_f,
+      f_prime = envelope_rv$f_prime,
+      log_f_prime = envelope_rv$log_f_prime
+      ),
+    class = c("LogLinearEnvelope", "Envelope", "RandomVariable")
   )
-  class(envelope) <- c("LogLinearEnvelope", "Envelope")
   return(envelope)
+}
+
+#' Re-estimate a LogLinearEnvelope
+#'
+#' Mostly useful for adding additional tangent points.
+#'
+#' @param enve The previous envelope.
+#' @param tangent_points The tangent points the new envelope should be fitted to.
+#'
+#' @return A LogLinearEnvelope.
+#' @export
+#'
+#' @examples
+#' enve <- LogLinearEnvelope(get_rv("n"))
+#' plot(enve)
+#' enve <- update.LogLinearEnvelope(enve, c(enve$tangent_points, 0))
+#' plot(enve)
+update.LogLinearEnvelope <- function(enve, tangent_points){
+  enve <- LogLinearEnvelope(enve$base_rv, tangent_points)
+  return(enve)
+}
+
+# This is black magic needed by update.LogLinearEnvelope
+# Truth be told, the function just needs to pretend to have a formula, like y~x
+# Which it does not, but we can hack it (be careful though)
+getCall.LogLinearEnvelope <- function(enve){
+  NULL
 }
 
 #' Plot a LogLinearEnvelope with the function is is an envelope to
@@ -76,7 +127,7 @@ LogLinearEnvelope <- function(f, f_prime, tangent_points){
 #' @export
 #'
 #' @examples
-#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-3, -1, 1, 3))
+#' enve <- LogLinearEnvelope(get_rv(), c(-2,0,1))
 #' plot(enve)
 #' plot(enve, logscale=TRUE)
 plot.Envelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALSE){
@@ -84,14 +135,14 @@ plot.Envelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALSE){
   if (logscale){
     plot_data <- tibble::tibble(
       x = grid,
-      f = log(enve$f(grid)),
-      envelope = log(enve$g(grid))
+      f = enve$base_rv$log_f(grid),
+      envelope = enve$log_f(grid)
     )
   } else {
     plot_data <- tibble::tibble(
       x = grid,
-      f = enve$f(grid),
-      envelope = enve$g(grid)
+      f = enve$base_rv$f(grid),
+      envelope = enve$f(grid)
     )
   }
   plot_data <- plot_data %>%

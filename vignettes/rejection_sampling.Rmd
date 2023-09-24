@@ -19,11 +19,27 @@ library(CompStat)
 ```
 
 # Introduction
-This vignette serves as a general rundown of the rejection sampling module. This module implements the following functions:
+This vignette serves as a general rundown of the rejection sampling module. The module builds upon the following central objects:
 
-* Function X
-* Function Y
-* Function Z
+* RandomVariable - Contains densities, log-densities, and their derivatives.
+* Envelope - Subclass of a RandomVariable. Exposes simulation methods and bounding constant $\alpha$.
+
+And the follwing central functions:
+
+* RandomVariable() - Instantiation of a RandomVariable.
+* GaussianEnvelope() - Instantiation and fit of a Gaussian Envelope.
+* LogLinearEnvelope() - Instantiation and fit of a Log-Linear Envelope.
+* rejection_sampler_factory() - Creates rejection_samplers from envelopes.
+
+# Individual Component Implementation
+## GaussianEnvelope()
+THIS ONE IS NOT DONE YET.
+
+## LogLinearEnvelope
+The *LogLinearEnvelope* function takes the following arguments:
+* A RandomVariable - For which the envelope should be constructed.
+* A list of values - Used for choosing the envelope discontinuities. Provides a default.
+
 
 And they do stuff.
 
@@ -45,15 +61,70 @@ microbenchmark::microbenchmark(
 )
 ```
 # Implementing log-linear envelopes
+Here we provide a little detail on the implementation of log-linear envelopes.
+The general implementation is rather straightforward and fast, but the issue is
+simulation from the corresponding density. This is achieved by using the inverse
+quantile transform, and for this we need tp compute the quantile function.
+
+Generally, this boils down to the problem of solving the equation
+$$
+F_i(x) = cq - Q_{i-1}
+$$
+where
+$$
+F_i(x) = \frac{1}{a_i}e^{b_i}(e^{a_ix} - e^{a_iz_{i-1}})
+$$
+Solving this equation for $x$ yields
+$$
+x = \frac{\log\left(\frac{a_iF_i(x)}{e^{b_i}} + e^{a_iz_i}\right)}{a_i}
+$$
+This calculation is the bottleneck for the simulation - More specifically, computing the logarithm is the slow step after one caches all quantities different from $F_i(x)$ (sine this one depends on the input).
+
+
 Let benchmark some loglinear-envelope implementations:
 
-```{r}
-enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-1.5, 0, 1.5))
+```{r Much faster to use log_f}
+enve <- LogLinearEnvelope(get_rv(), c(-1.5, 0, 1.5))
 grid <- seq(-6,6,0.001)
 microbenchmark::microbenchmark(
-  enve$g(grid)
+  enve$f(grid),
+  enve$log_f(grid)
 )
 ```
+
+# Implementing rejection sampling
+Okay, lets benchmark some rejections sampling
+```{r}
+source("R/rejections_sampler.R")
+enve <- LogLinearEnvelope(get_rv(), c(-1.5, 0, 1.5))
+sampler_standard <- rejection_sampler_factory(enve)
+sampler_log <- rejection_sampler_factory(enve, evalmode = 1)
+sampler_rexp <- rejection_sampler_factory(enve, evalmode = 2)
+microbenchmark::microbenchmark(
+  sampler_standard(1e5),
+  sampler_log(1e5),
+  sampler_rexp(1e5)
+)
+
+profvis::profvis(
+  sampler_standard(1e7)
+)
+
+profvis::profvis(
+  sampler_log(1e7)
+)
+
+profvis::profvis(
+  sampler_rexp(1e7)
+)
+
+profvis::profvis(
+  enve$sim(1e7)
+)
+
+
+```
+
 
 
 

@@ -7,7 +7,7 @@
 GaussianEnvelope(f, rg = c(-3, 3), security = 1 + 1e-09)
 }
 \arguments{
-\item{f}{The function for which to construct the envelope.}
+\item{f}{The function for which to construct the envelope. Can also pass a RandomVariable.}
 
 \item{rg}{The range used to compute the fraction of densities.}
 
