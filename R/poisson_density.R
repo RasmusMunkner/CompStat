@@ -1,85 +1,27 @@
 data("poisson")
+xz_poisson_prior <- sum(poisson$x * poisson$z)
 
-
-#' Density evaluation for rejection sampling
+#' Log-density for the poisson prior (Example Distribution)
 #'
-#' @param y Evaluation point(s).
+#' @param y The points at which to evaluate the log-density.
 #'
-#' @return The density evaluated in the given points.
+#' @return The log-density within the given points.
 #' @export
 #'
 #' @examples
-#' rejec_dens1(0)
-rejec_dens1 <- Vectorize(function(y){
-  xy <- y * poisson$x
-  prod(exp(xy * poisson$z - exp(xy)))
-})
-
-#' Density evaluation for rejection sampling
-#'
-#' @param y Evaluation point(s).
-#'
-#' @return The density evaluated in the given points.
-#' @export
-#'
-#' @examples
-#' rejec_dens2(0)
-rejec_dens2 <- Vectorize(function(y){
-  xy <- y * poisson$x
-  exp(sum(xy * poisson$z - exp(xy)))
-})
-
-
-precomputed_xz <- sum(poisson$x * poisson$z)
-#' Density evaluation for rejection sampling
-#'
-#' @param y Evaluation point(s).
-#'
-#' @return The density evaluated in the given points.
-#' @export
-#'
-#' @examples
-#' rejec_dens3(0)
-rejec_dens3 <- Vectorize(function(y){
-  exp(y*precomputed_xz - sum(exp(y*poisson$x)))
-})
-
-#' Density evaluation for rejection sampling
-#'
-#' @param y Evaluation point(s).
-#'
-#' @return The density evaluated in the given points.
-#' @export
-#'
-#' @examples
-#' rejec_dens4(0)
-rejec_dens4 <- function(y){
-  term1 <- y*precomputed_xz
+#' poisson_prior_log_f(1)
+poisson_prior_log_f <- function(y){
+  term1 <- y*xz_poisson_prior
   term2 <- rowSums(exp(outer(y, poisson$x)))
-  exp(term1 - term2)
+  result <- term1 - term2
+  result[y <= 0] <- -Inf # The above calculations do extrapolate, but the density should not
+  return(result)
 }
 
-#' Density evaluation for rejection sampling
-#'
-#' @param y Evaluation point(s).
-#'
-#' @return The density evaluated in the given points.
-#' @export
-#'
-#' @examples
-#' rejec_dens5(0)
-rejec_dens5 <- function(y){
-  term1 <- y*sum(poisson$x * poisson$z)
-  term2 <- rowSums(exp(outer(y, poisson$x)))
-  exp(term1 - term2)
-}
-
-log_rejec_dens5 <- function(y){
-  y*sum(poisson$x * poisson$z) - rowSums(exp(outer(y, poisson$x)))
-}
-
-log_rejec_dens_prime <- function(y){
-  sum(poisson$x * poisson$z) - rowSums(exp(outer(y, poisson$x + log(poisson$x))))
+poisson_prior_log_f_prime <- function(y){
+  term1 <- xz_poisson_prior
+  term2 <- rowSums(matrix(rep(poisson$x, length(y)), nrow=length(y), byrow = T) * exp(outer(y, poisson$x)))
+  term1 - term2
 }
 
 #' An object mean to represent a distribution.
@@ -171,7 +113,9 @@ get_rv <- function(key = "n"){
          "g"=RandomVariable(f = function(z) dgamma(z, 2),
                             log_f = function(z) log(z) - z,
                             f_prime = function(z) -dgamma(z,2) + exp(-z)
-                            )
+                            ),
+         "p"=RandomVariable(log_f = poisson_prior_log_f,
+                            log_f_prime = poisson_prior_log_f_prime)
          )
 }
 

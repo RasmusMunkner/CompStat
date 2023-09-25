@@ -7,15 +7,16 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r Knitr setup, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
 )
 ```
 
-```{r setup}
+```{r Packages}
 library(CompStat)
+library(tidyverse)
 ```
 
 # Introduction
@@ -24,7 +25,7 @@ This vignette serves as a general rundown of the rejection sampling module. The 
 * RandomVariable - Contains densities, log-densities, and their derivatives.
 * Envelope - Subclass of a RandomVariable. Exposes simulation methods and bounding constant $\alpha$.
 
-And the follwing central functions:
+And the following central functions:
 
 * RandomVariable() - Instantiation of a RandomVariable.
 * GaussianEnvelope() - Instantiation and fit of a Gaussian Envelope.
@@ -37,34 +38,27 @@ THIS ONE IS NOT DONE YET.
 
 ## LogLinearEnvelope
 The *LogLinearEnvelope* function takes the following arguments:
+
 * A RandomVariable - For which the envelope should be constructed.
-* A list of values - Used for choosing the envelope discontinuities. Provides a default.
+* A list of values - Used for choosing the envelope discontinuities. Defaults to 2 automatically chosen points.
 
+The desired functionality requires first and foremost two things:
 
-And they do stuff.
-
-# Implementing the target density
-We experimented with several different iterations of the density
+* Fast simulation from the envelope, since simulations from the envelope form the basis for rejection sampling.
+* Fast evaluation, since we need to evaluate the expression
 $$
-f(y) \propto \prod_{i=1}^{100} \exp(yx_iz_u - \exp(yx_i))
+\alpha\frac{f_{input}(Y)}{f_{enve}(Y)}
 $$
-To obtain a sense of which implementation would perform best, we implemented a simple benchmark. The following results were obtained:
-```{r, cache=TRUE}
-y <- seq(0.001, 1, 0.001)
-microbenchmark::microbenchmark(
-  rejec_dens1(y),
-  rejec_dens2(y),
-  rejec_dens3(y),
-  rejec_dens4(y),
-  rejec_dens5(y),
-  times=100
-)
+a large number of times to decide if we accept or reject.
+
+For illustrations, we will use the following envelope for a Gaussian distribution:
+```{r Defining an envelope for quantile profiling, fig.width=7, fig.height=3}
+enve <- LogLinearEnvelope(get_rv("n"), c(-3, -1, 0, 1, 3))
+plot(enve)
 ```
-# Implementing log-linear envelopes
-Here we provide a little detail on the implementation of log-linear envelopes.
-The general implementation is rather straightforward and fast, but the issue is
-simulation from the corresponding density. This is achieved by using the inverse
-quantile transform, and for this we need tp compute the quantile function.
+
+## Simulation
+This is achieved by using the inverse quantile transform quantile transform, for which we need to compute the quantile function.
 
 Generally, this boils down to the problem of solving the equation
 $$
@@ -78,69 +72,208 @@ Solving this equation for $x$ yields
 $$
 x = \frac{\log\left(\frac{a_iF_i(x)}{e^{b_i}} + e^{a_iz_i}\right)}{a_i}
 $$
-This calculation is the bottleneck for the simulation - More specifically, computing the logarithm is the slow step after one caches all quantities different from $F_i(x)$ (sine this one depends on the input).
+This calculation is the bottleneck for the simulation. The operations are all rather elementary, so they are hard to improve. Hence the trick is to reduce the number of times they should be performed.
 
+Note that the above process calculation can be performed with input $(a, b, z, F)$ or with input $\left(\frac{a}{e^b}, e^{az}, a, F\right) = (p, q, a, F)$, in this case reducing to
+$$
+x = \frac{\log(pF + q)}{a}
+$$
+Thus reducing the need to compute the two exponentiations within each call. This leads to large speedup as show in the profiling window below:
 
-Let benchmark some loglinear-envelope implementations:
-
-```{r Much faster to use log_f}
-enve <- LogLinearEnvelope(get_rv(), c(-1.5, 0, 1.5))
-grid <- seq(-6,6,0.001)
-microbenchmark::microbenchmark(
-  enve$f(grid),
-  enve$log_f(grid)
+```{r Profiling Quantile Function Implementation, eval = F}
+set.seed(0)
+U <- runif(1e7)
+set.seed(NULL)
+profile <- profvis::profvis(
+  enve$quant(U)
 )
+htmlwidgets::saveWidget(profile, "quantile_profile.html")
+```
+![Snippet from profile produced by the above code chunk](quantile_profile.png){#id .class width=700px }
+## Evaluation
+Evaluation is rather straightforward and very fast in general - All we must do is compute
+$$
+f(x) = \exp(a_ix + b_i)
+$$
+for the appropriate $a,b$. The bottleneck of this operation is rather the exponentiation, hence we allow for the envelope to return instead the log-density for further operations that can work with this directly.
+
+```{r Benchmark Evaluations, cache=TRUE, fig.width=7, fig.height=3}
+f <- enve$f
+log_f <- enve$log_f
+z <- seq(8, 18)
+set.seed(0)
+x <- z %>% purrr::map(.f=function(z){
+  rnorm(2^z)
+})
+set.seed(NULL)
+calls_f <- seq_along(x) %>% 
+  purrr::map(.f=function(i){
+    call("f", x[[i]])
+  })
+calls_log_f <- seq_along(x) %>% 
+  purrr::map(.f=function(i){
+    call("log_f", x[[i]])
+  })
+names(calls_f) <- paste0(c("f"), 2^z)
+names(calls_log_f) <- paste0(c("log_f"), 2^z)
+all_calls <- c(calls_f, calls_log_f)
+fvlogfbm <- microbenchmark::microbenchmark(
+  list=all_calls
+)
+fvlogfbm %>% autoplot()
+```
+```{r Plot Evaluation Benchmark, fig.width=7, fig.height=3}
+intermediate <- fvlogfbm %>%
+  as.data.frame() %>% 
+  as.tibble() %>% 
+  group_by(expr) %>% 
+  summarise(med_time = median(time)) %>%
+  mutate(nsamples = str_extract(expr %>% as.character(), "[0-9]+") %>% as.numeric(),
+         what = str_extract(expr %>% as.character(), "[^0-9]+") %>% as.factor()
+  )
+
+intermediate %>% 
+  ggplot(aes(x = log(nsamples), y = log(med_time), color = what)) +
+  geom_line() +
+  labs(x = "Log(Evaluation)", y = "Log(Median Time)")
 ```
 
-# Implementing rejection sampling
-Okay, lets benchmark some rejections sampling
+# rejection_sampler_factory
+Clearly the naive method of rejection sampling is simulating one random variable at a time. We implemented this approach at first, but it is horribly slow and not particularly interesting.
+
+For a more competitive implementation, we have *rejection_sampler_factory*, which is a function-factory producing a rejection samplers given an envelope.
+
+## Evalmode
+Apart from the envelope, *rejection_sampler_factory* also takes an argument *evalmode*. This defaults to 0, but 1 and 2 are also possible. These arguments decide how the rejection sampling process should be carried out.
+
+For *evalmode* set to 0, standard rejection sampling is performed using the formula
+$$
+U \leq \alpha \frac{f_{input}(Y)}{f_{enve}(Y)}
+$$
+for the acceptance/rejection step.
+
+If *evalmode* is 1, we instead perform the acceptance on log-scale. This is hypothesized to be slightly faster, since fewer exponentiations are needed. The formula is
+$$
+\log(U) \leq \log(\alpha) + \log(f_{input}(Y)) - \log(f_{enve}(Y))
+$$
+Finally, if *evalmode* is 2, we utilize the fact that $-\log(U) \sim \text{expo}(1)$, hence it is hypothesized to be faster to sample $E$ from an exponential distribution and calculate
+$$
+-E \leq \log(\alpha) + \log(f_{input}(Y)) - \log(f_{enve}(Y))
+$$
+for the accept/reject step.
+
+Our hypothesis is supported by the following profile of the implementation.
+```{r Profiling different rejection steps, eval = F}
+sampler <- rejection_sampler_factory(enve, evalmode = c(0,1,2))
+profvis::profvis(
+  sampler(1e7)
+)
+```
+![Snippet from profile produced by the above](rejection_profile.png){#id .class width=600px}
+Note that the results from each *evalmode* are not identical, since they simulate the uniform/exponential random variables separately. Hence the number of rejections will also be slightly different.
+
+## Adaptibility
+For LogLinearEnvelopes, we may iteratively improve the envelope coverage by selection additional tangent points for the envelope. This can be done for each sampler produced by *rejection_sampler_factory* if the sampler is used with the *adapt_env* argument set to TRUE.
+
+The question is if this actually improves the sampling speed. This will come down to a trade-off between extra overhead from evaluating a more complex envelope and fewer rejections, since the envelope is tighter. We conjecture that this will mostly improve otherwise poor envelopes.
+
+To demonstrate this point, we create a poor (Laplacian) envelope of a Gaussian density
+```{r Envelope with few tangent points, fig.width=7, fig.height=3}
+enve_few <- LogLinearEnvelope(get_rv("n"))
+sampler_few <- rejection_sampler_factory(enve_few, evalmode = 2)
+plot(enve_few)
+```
+And this we compare with the same envelope, but fitted iteratively to the distribution
+```{r Envelope with some tangent points, fig.width=7, fig.height=3}
+enve_medium <- LogLinearEnvelope(get_rv("n"))
+sampler_medium <- rejection_sampler_factory(enve_medium, evalmode = 2)
+set.seed(0)
+for (i in 1:15){
+  sampler_medium(1e5, adapt_enve = T)
+}
+set.seed(NULL)
+plot(environment(sampler_medium)$enve)
+```
+
+```{r Envelope with many tangent points, fig.width=7, fig.height=3}
+enve_many <- LogLinearEnvelope(get_rv("n"))
+sampler_many <- rejection_sampler_factory(enve_medium, evalmode = 2)
+set.seed(0)
+for (i in 1:150){
+  sampler_many(1e5, adapt_enve = T)
+}
+set.seed(NULL)
+plot(environment(sampler_many)$enve)
+```
+Now, we perform a benchmark
+```{r Adaptive Sampler Benchmark, cache = T}
+z <- 8:16
+x <- 2^z
+calls_few <- seq_along(x) %>% 
+  purrr::map(.f=function(i){
+    call("sampler_few", x[i])
+  })
+calls_medium <- seq_along(x) %>% 
+  purrr::map(.f=function(i){
+    call("sampler_medium", x[i])
+  })
+calls_many <- seq_along(x) %>% 
+  purrr::map(.f=function(i){
+    call("sampler_many", x[i])
+  })
+names(calls_few) <- paste0(c("few"), 2^z)
+names(calls_medium) <- paste0(c("medium"), 2^z)
+names(calls_many) <- paste0(c("many"), 2^z)
+all_calls <- c(calls_few, calls_medium, calls_many)
+adaptive_sampler_bm <- microbenchmark::microbenchmark(
+  list=all_calls
+)
+```
+And lets do some plots
+
+```{r Autoplot Adaptation Benchmark, fig.width=7, fig.height=3}
+adaptive_sampler_bm %>% autoplot()
+```
+
+```{r Plot Adaptation Benchmark, fig.width=7, fig.height=3}
+intermediate <- adaptive_sampler_bm %>%
+  as.data.frame() %>% 
+  as.tibble() %>% 
+  group_by(expr) %>% 
+  summarise(med_time = median(time)) %>%
+  mutate(nsamples = str_extract(expr %>% as.character(), "[0-9]+") %>% as.numeric(),
+         what = str_extract(expr %>% as.character(), "[^0-9]+") %>% as.factor()
+  )
+
+intermediate %>% 
+  ggplot(aes(x = log(nsamples), y = log(med_time), color = what)) +
+  geom_line() +
+  labs(x = "Log(Samples)", y = "Log(Median Time)")
+```
+The conclusion is that it is certainly possible to improve the rejection sampling efficiency by adapting the envelopes, but one can also over-adapt them. None of this changes the asymptotic growth rate as expected.
+
+# Implementing the target density
+For this assignment, we were particularly interested in implementing a rejection sampler for the following un-normalized density:
+$$
+f(y) \propto \prod_{i=1}^{100} \exp(yx_iz_u - \exp(yx_i))
+$$
+$$
+\log(f(y)) = y\sum_{i=1}^{100} x_iz_i - \sum_{i=1}^{100}e^{yx_i}
+$$
+$$
+\frac{d}{dy}\log(f(y)) = \sum_{i=1}^{100} x_iz_i - \sum_{i=1}^{100}x_ie^{yx_i}
+$$
+This clearly requires an efficient implementation of the above, hence which we provide through the *poisson_prior_log_f* and *poisson_prior_log_f_prime* - functions. These should be accessed through a RandomVariable by calling *get_rv("p")*.
+
 ```{r}
-source("R/rejections_sampler.R")
-enve <- LogLinearEnvelope(get_rv(), c(-1.5, 0, 1.5))
-sampler_standard <- rejection_sampler_factory(enve)
-sampler_log <- rejection_sampler_factory(enve, evalmode = 1)
-sampler_rexp <- rejection_sampler_factory(enve, evalmode = 2)
-microbenchmark::microbenchmark(
-  sampler_standard(1e5),
-  sampler_log(1e5),
-  sampler_rexp(1e5)
-)
-
-profvis::profvis(
-  sampler_standard(1e7)
-)
-
-profvis::profvis(
-  sampler_log(1e7)
-)
-
-profvis::profvis(
-  sampler_rexp(1e7)
-)
-
-profvis::profvis(
-  enve$sim(1e7)
-)
-
-
+#WORK IN PROGRESS
+enve <- LogLinearEnvelope(get_rv("p"), tangent_points = c(0.1, 0.8))
+plot(enve, grid=seq(0.001, 1, 0.001), logscale = T)
+sampler <- rejection_sampler_factory(enve)
+profvis::profvis(sampler(1e6))
+U <- runif(1e8)
+profvis::profvis(enve$quant(U))
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

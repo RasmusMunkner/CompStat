@@ -4,7 +4,7 @@
 \alias{rejection_sampler_factory}
 \title{Compile rejection samplers for arbitrary envelope}
 \usage{
-rejection_sampler_factory(enve, evalmode = 0)
+rejection_sampler_factory(enve, evalmode = 2)
 }
 \arguments{
 \item{enve}{An object of class 'Envelope'.}

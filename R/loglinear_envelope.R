@@ -29,6 +29,15 @@ LogLinearEnvelope <- function(rv, tangent_points = NULL){
   # Absolutely necessary quantities
   tangent_points <- sort(tangent_points)
   a <- rv$log_f_prime(tangent_points)
+
+  # Safeguard against flat tangents (they slow down computation)
+  tangent_points <- tangent_points[a != 0]
+  a <- rv$log_f_prime(tangent_points) # Recompute a
+  # Check that the envelope is well-defined
+  if (a[1] <= 0 || a[length(a)] >= 0){
+    stop("Envelope is not well-defined. Usually this is due to inadequate tangent point spread.")
+  }
+
   b <- rv$log_f(tangent_points) - a * tangent_points
   z <- diff(-b) / diff(a)
 
@@ -37,32 +46,41 @@ LogLinearEnvelope <- function(rv, tangent_points = NULL){
   R <- dplyr::coalesce(R, exp(b) * (c(z,Inf) - c(-Inf, z)))
   Q <- cumsum(R)
   c <- Q[length(Q)]
-  eb <- exp(b)
-  eaz <- exp(a * c(-Inf, z))
+
+  # Caching calculations
+  eb_cache <- exp(b)
+  aeb_cache <- a / eb_cache
+  eaz_cache <- exp(a * c(-Inf, z))
 
   # Evaluation and simulation
   eval_envelope <- function(x){
-    section <- cut(x, label = FALSE, breaks=c(-Inf, z, Inf))
+    section <- .bincode(x, breaks=c(-Inf, z, Inf))
     a[section] * x + b[section]
   }
 
   # Quantile function (This could potentially be improved a lot)
   quant <- function(p){
     Q <- c(0, Q)
-    i <- cut(Q[length(Q)]*p, Q, labels=FALSE)
+    i <- .bincode(Q[length(Q)]*p, Q)
     Fx <- Q[length(Q)]*p - Q[i]
-    aF <- a[i]*Fx
-    aFb <- aF / exp(b[i])
-    aFb <- aF / eb[i]
-    zTrunc <- c(-Inf, z)[i]
-    aZ <- exp(a[i]*zTrunc)
-    aZ <- eaz[i]
-    almost <-  log(aFb + aZ)
-    x <- almost / a[i]
 
-    # Handling cases with a[i] = 0
-    x %>%
-      dplyr::coalesce(Fx / exp(b[i]) + c(-Inf, z)[i])
+    # Term 1
+    #aF <- a[i]*Fx
+    #aFb <- aF / exp(b[i])
+    # Term 1 alternative
+    aFb <- aeb_cache[i] * Fx
+
+    # Term 2
+    #aZ <- exp(a[i]*c(-Inf, z)[i])
+    # Term 2 alternative
+    aZ <- eaz_cache[i]
+
+    # Finally
+    x <-  log(aFb + aZ) / a[i]
+    # Handling cases with a[i] = 0 - These have been excluded in a newer implementation
+    #x %>%
+    #  dplyr::coalesce(Fx / eb_cache[i] + c(-Inf, z)[i])
+    x
   }
 
   # Simulation
@@ -71,7 +89,9 @@ LogLinearEnvelope <- function(rv, tangent_points = NULL){
     quant(u)
   }
 
-  envelope_rv <- RandomVariable(log_f = eval_envelope)
+  suppressWarnings(
+    envelope_rv <- RandomVariable(log_f = eval_envelope)
+  )
 
   envelope <- structure(
     list(
