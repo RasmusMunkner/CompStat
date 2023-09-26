@@ -105,6 +105,9 @@ RandomVariable <- function(f = NULL, log_f = NULL, f_prime = NULL, log_f_prime =
 #' @export
 #'
 #' @examples
+#' get_rv("n")
+#' get_rv("g")
+#' get_rv("p")
 get_rv <- function(key = "n"){
   switch(key,
          "n"=RandomVariable(f = dnorm,

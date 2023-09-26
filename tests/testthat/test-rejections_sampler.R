@@ -1,6 +1,6 @@
 test_that("Rejection sampler produces the correct distribution", {
   set.seed(0)
-  enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
+  enve <- LogLinearEnvelope(get_rv("n"))
   sampler <- rejection_sampler_factory(enve)
   sim <- sampler(5000)
   set.seed(NULL)

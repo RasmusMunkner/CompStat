@@ -42,8 +42,8 @@ LogLinearEnvelope <- function(rv, tangent_points = NULL){
   z <- diff(-b) / diff(a)
 
   # Extra quantities that are nice for simulation
-  R <- exp(b) / a * (exp(a*c(z, Inf)) - exp(a*c(-Inf, z)))
-  R <- dplyr::coalesce(R, exp(b) * (c(z,Inf) - c(-Inf, z)))
+  R <- sign(a) * (exp(a*c(z, Inf) + b - log(abs(a))) - exp(a*c(-Inf, z) + b - log(abs(a))))
+  #R <- dplyr::coalesce(R, exp(b) * (c(z,Inf) - c(-Inf, z)))
   Q <- cumsum(R)
   c <- Q[length(Q)]
 

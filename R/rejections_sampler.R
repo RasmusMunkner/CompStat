@@ -1,34 +1,4 @@
 
-
-#' Slow rejection sampling for arbitrary envelope
-#'
-#' This method is abysmally slow and was only implemented to provide a baseline.
-#'
-#' @param n The number of simulations.
-#' @param enve An object of class 'Envelope'.
-#' @param alpha
-#'
-#' @return Simulations from the distribution that the envelope is based on.
-#' @export
-#'
-#' @examples
-#' enve <- LogLinearEnvelope(dnorm, function(z){dnorm(z) * (-z)}, c(-2,0,1))
-#' rejection_sampler_naive(10, enve)
-rejection_sampler_naive <- function(n, enve){
-  alpha <- 1/enve$c
-  y_vec <- vector("numeric")
-  n_sim <- 1
-  while (n_sim <= n){
-    U <- runif(1)
-    Y <- enve$sim(1)
-    if (U <= alpha * enve$f(Y) / enve$g(Y)){
-      y_vec[n_sim] <- Y
-      n_sim <- n_sim + 1
-    }
-  }
-  y_vec
-}
-
 #' Compile rejection samplers for arbitrary envelope
 #'
 #' @param enve An object of class 'Envelope'.
@@ -55,26 +25,25 @@ rejection_sampler_naive <- function(n, enve){
 #' environment(sampler)$credibility
 #'
 #' #Gamma Distribution
-#' enve <- LogLinearEnvelope(
-#'   function(z){dgamma(z,2)},
-#'   function(z){dgamma(z,2) / z - dgamma(z, 2)},
-#'   c(0.5, 2, 4.5)
-#' )
+#' enve <- LogLinearEnvelope(get_rv("g"))
 #' sampler <- rejection_sampler_factory(enve)
 #' sim <- sampler(50000)
-#' hist(sim, prob=TRUE)
-#' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+#' hist(sim, prob=TRUE, ylim = c(0,0.5))
+#' curve(enve$base_rv$f(x), 0, 8, col="blue", add=TRUE)
 #'
 #' # Laplacian Envelope
 #' enve <- LaplaceEnvelope(dnorm, sim_method = 2)
 #' sampler <- rejection_sampler_factory(enve)
 #' sim <- sampler(50000)
-#' hist(sim, prob=TRUE)
-#' curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+#' hist(sim, prob=TRUE, ylim=c(0,0.6))
+#' curve(enve$base_rv$f(x), -3, 3, col="blue", add=TRUE)
 rejection_sampler_factory <- function(enve, evalmode = 2){
-  p <- enve$alpha
+  p <- min(1 - 1 / (2 + enve$alpha), 0.9) # An initial guess at the rejection probability
   credibility <- 1#20 # Arbitrary
   rejection_sampler <- function(n, env = NULL, train = TRUE, adapt_enve = FALSE){
+
+    browser()
+
     if (is.null(env)){
       env <- enve
     }
