@@ -42,8 +42,8 @@ LogLinearEnvelope <- function(rv, tangent_points = NULL){
   z <- diff(-b) / diff(a)
 
   # Extra quantities that are nice for simulation
-  R <- exp(b) / a * (exp(a*c(z, Inf)) - exp(a*c(-Inf, z)))
-  R <- dplyr::coalesce(R, exp(b) * (c(z,Inf) - c(-Inf, z)))
+  R <- sign(a) * (exp(a*c(z, Inf) + b - log(abs(a))) - exp(a*c(-Inf, z) + b - log(abs(a))))
+  #R <- dplyr::coalesce(R, exp(b) * (c(z,Inf) - c(-Inf, z)))
   Q <- cumsum(R)
   c <- Q[length(Q)]
 
@@ -100,7 +100,7 @@ LogLinearEnvelope <- function(rv, tangent_points = NULL){
       quant = quant,
       base_rv = rv, # Envelope fields
       sim = sim,
-      alpha = 1/c,
+      alpha = 1, #Niels says this should be 1/c, but we are already on unnormalized scale
       f = envelope_rv$f, # RandomVariable fields
       log_f = envelope_rv$log_f,
       f_prime = envelope_rv$f_prime,
@@ -150,7 +150,9 @@ getCall.LogLinearEnvelope <- function(enve){
 #' enve <- LogLinearEnvelope(get_rv(), c(-2,0,1))
 #' plot(enve)
 #' plot(enve, logscale=TRUE)
-plot.Envelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALSE){
+#' plot(enve, compare=T)
+#' plot(enve, logscale=T, compare=T)
+plot.Envelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALSE, compare = FALSE){
 
   if (logscale){
     plot_data <- tibble::tibble(
@@ -165,9 +167,21 @@ plot.Envelope <- function(enve, grid = seq(-6, 6, 0.001), logscale=FALSE){
       envelope = enve$f(grid)
     )
   }
-  plot_data <- plot_data %>%
-    tidyr::pivot_longer(-x, names_to = "what", values_to = "y")
+  if (!compare){
+    plot_data <- plot_data %>%
+      tidyr::pivot_longer(-x, names_to = "what", values_to = "y")
 
-  ggplot2::ggplot(plot_data, ggplot2::aes(x = x, y = y, color = what)) +
-    ggplot2::geom_line()
+    ggplot2::ggplot(plot_data, ggplot2::aes(x = x, y = y, color = what)) +
+      ggplot2::geom_line()
+  } else {
+    if (logscale){
+      ggplot2::ggplot(plot_data, ggplot2::aes(x = x, y = envelope - f)) +
+        ggplot2::geom_line() +
+        ggplot2::labs(y="Log(Envelope) - Log(f)")
+    } else {
+      ggplot2::ggplot(plot_data, ggplot2::aes(x = x, y = f / envelope)) +
+        ggplot2::geom_line()
+    }
+  }
+
 }

@@ -35,20 +35,16 @@ environment(sampler)$p
 environment(sampler)$credibility
 
 #Gamma Distribution
-enve <- LogLinearEnvelope(
-  function(z){dgamma(z,2)},
-  function(z){dgamma(z,2) / z - dgamma(z, 2)},
-  c(0.5, 2, 4.5)
-)
+enve <- LogLinearEnvelope(get_rv("g"))
 sampler <- rejection_sampler_factory(enve)
 sim <- sampler(50000)
-hist(sim, prob=TRUE)
-curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+hist(sim, prob=TRUE, ylim = c(0,0.5))
+curve(enve$base_rv$f(x), 0, 8, col="blue", add=TRUE)
 
 # Laplacian Envelope
 enve <- LaplaceEnvelope(dnorm, sim_method = 2)
 sampler <- rejection_sampler_factory(enve)
 sim <- sampler(50000)
-hist(sim, prob=TRUE)
-curve(enve$f(x), -3, 3, col="blue", add=TRUE)
+hist(sim, prob=TRUE, ylim=c(0,0.6))
+curve(enve$base_rv$f(x), -3, 3, col="blue", add=TRUE)
 }

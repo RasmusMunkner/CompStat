@@ -15,3 +15,8 @@ A RandomVariable object corresponding to the distribution specified.
 \description{
 Convinience function for encoding common distributions into RV's.
 }
+\examples{
+get_rv("n")
+get_rv("g")
+get_rv("p")
+}
