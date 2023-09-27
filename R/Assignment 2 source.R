@@ -87,25 +87,48 @@ p_opt <- function(y){
 
 alpha_prime_opt <- min(sapply_cpp(sekvens, function(y) p(y)/q(y)))
 
-reject_sampler_opt = function(n, rProposal = rnorm, dProposal = p_opt, dTarget = q) {
+ratio_vec <- c(0)
+
+reject_sampler_opt = function(n, rProposal = rnorm, dProposal = p_opt, dTarget = q, trace = FALSE) {
+  count <- 0
   result = numeric(n)
   mu <- mu_opt(0,0.5,50)
   for(i in 1:n) {
-    U = 1
-    ratio = 0
+    U <- 1
+    ratio <- 0
     while(U > ratio) {
-      U = runif(1)
-      Y = rProposal(1,mean=mu)
-      ratio = alpha_prime_opt * dTarget(Y) / dProposal(Y)
+      count <- count + 1
+      U <- runif(1)
+      Y <- rProposal(1,mean=mu)
+      ratio <- alpha_prime_opt * dTarget(Y) / dProposal(Y)
+      ratio_vec <<- append(ratio_vec, ratio)
     }
-    result[i] = Y
+    result[i] <- Y
+  }
+  if(trace){
+    cat("Rejection frequency =", (count-n)/count, "\n")
   }
   result
 }
 
 
-
-
+fkt_stream <- function(m, fkt, ...) {
+  args <- list(...)
+  cache <- do.call(fkt, c(m, args)) # Calls the function with n=m and arguments at                                     # told. E.g. ... could be mean and sd for                                         # fkt=rnorm
+  j <- 0
+  fact <- 1
+  next_rn <- function(r = m) {
+    j <<- j + 1
+    if(j > m) {                     # When all the generated RVs are used we                                          # generates new ones.
+      if(fact == 1 && r < m) fact <<- m / (m - r)
+      m <<- floor(fact * (r + 1))
+      cache <<- do.call(fkt, c(m, args))
+      j <<- 1
+    }
+    cache[j]                        # The fkt_stream function reterns the jth                                         # element of the RV vector
+  }
+  next_rn
+}
 
 reject_sampler_opt2 = function(n, rProposal = rnorm, dProposal = p_opt, dTarget = q, trace = FALSE) {
   count <- 0
@@ -135,20 +158,3 @@ reject_sampler_opt2 = function(n, rProposal = rnorm, dProposal = p_opt, dTarget 
 
 
 
-fkt_stream <- function(m, fkt, ...) {
-  args <- list(...)
-  cache <- do.call(fkt, c(m, args)) # Calls the function with n=m and arguments at                                     # told. E.g. ... could be mean and sd for                                         # fkt=rnorm
-  j <- 0
-  fact <- 1
-  next_rn <- function(r = m) {
-    j <<- j + 1
-    if(j > m) {                     # When all the generated RVs are used we                                          # generates new ones.
-      if(fact == 1 && r < m) fact <<- m / (m - r)
-      m <<- floor(fact * (r + 1))
-      cache <<- do.call(fkt, c(m, args))
-      j <<- 1
-    }
-    cache[j]                        # The fkt_stream function reterns the jth                                         # element of the RV vector
-  }
-  next_rn
-}

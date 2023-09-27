@@ -14,9 +14,24 @@ knitr::opts_chunk$set(
 )
 ```
 
+```{r, include=FALSE}
+source("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/CompStat/R/poisson_density.R")
+source("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/CompStat/R/loglinear_envelope.R")
+source("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/CompStat/R/rejections_sampler.R")
+source('C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/CompStat/R/Assignment 2 source.R')
+```
+
+```{r, include = FALSE}
+Poisson <- read_csv("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/Data/2_Poisson.csv", 
+    col_types = cols(z = col_integer()))
+poisson <- Poisson
+```
+
 ```{r Packages}
 library(CompStat)
 library(tidyverse)
+library(purrr)
+library(profvis)
 ```
 
 # Introduction
@@ -34,7 +49,290 @@ And the following central functions:
 
 # Individual Component Implementation
 ## GaussianEnvelope()
-THIS ONE IS NOT DONE YET.
+First step is to implement the given proportionality-expression of the density of
+$$
+f(y) \propto \Pi_{i=1}^{100}\exp\left(yz_ix_i-e^{yx_i}\right),\:\:\:\:\:\: y\geq 0
+$$
+Due to the fact, that it is data-dependent and uses the exponential expression we expect this one to be noticeably timeconsuming, and we therefore start by three different implementation strategies of which we will continue using the fastest
+
+```{r, eval=FALSE}
+rejec_dens1 <- Vectorize(function(y, data=Poisson){
+  x <- data$x
+  z <- data$z
+  prod(exp(y*z*x-exp(y*x)))
+})
+
+rejec_dens3 <- Vectorize(function(y){
+  xy <- y * poisson$x
+  prod(exp(xy * poisson$z - exp(xy)))
+})
+
+rejec_dens5 <- function(y){
+  term1 <- y*sum(poisson$x * poisson$z)
+  term2 <- rowSums(exp(outer(y, poisson$x)))
+  exp(term1 - term2)
+}
+```
+
+And we compare their speeds using benchmark
+```{r}
+step <- seq(0, 1, 0.001)
+results <- microbenchmark::microbenchmark(
+  rejec_dens1(step), 
+  rejec_dens3(step), 
+  rejec_dens5(step)
+  )
+
+results
+autoplot(results)
+```
+And the conclussion is clear: rejec_dens5 is the fastests, which is not surpricing due to the fact, that R truely likes matrix- and vectoroperations.
+
+Having a function for the target-function we would like to get an idea of its behavior, which is why we plot it below. The values taken by this function comes as a monster in the dark on a scale of $10^{-42$. However we also note, that all interesting behavior is in the area $x\in(0,0.5)$
+We also note, that it could seem proportional to a gaussian distribution with an incredibly low standard deviation, so implementing rejection sampling from a distribution with density $f$ using a gaussian envelope does not intuitively seem off.
+
+```{r}
+input = data.frame(x = seq(0, 1, length.out = 50))
+ggplot(input, aes(x)) +
+  # stat_function(fun = function(x) dnorm(x, mean = 0.24, sd=0.1)*(1e-40), color = "red") + 
+  stat_function(fun = function(x) rejec_dens5(x), color = "blue") +
+  labs(x = "x", y = "Density") + 
+  theme_classic()
+```
+
+
+Let 
+$$
+q(y)=\Pi_{i=1}^{100}\exp\left(yz_ix_i-e^{yx_i}\right),\:\:\:\:\:\: y\geq 0
+$$
+and
+$$
+p(y)=e^{-\frac{1}{2}(y-\mu)^2},\:\:\:y\in\mathbb{R}
+$$
+Then $f(x)\propto q(x)$ and $\phi(x-\mu)\propto p(x)$ for $\phi$ denoting the density of a standard normal distribution.
+
+When doing rejection sampling one should always make sure, that for a function $g(X)$ the following holds
+
+* We can sample from the "distribution"
+* $g(x) = 0\rightarrow f(x) = 0
+* $g(x)$ has finite integral
+
+However, this is obviously so for the gaussian density, hence also for $p$
+
+Since we can find no analytical infimum of the quantity $\frac{p(y)}{q(y)]}=e^{-\frac{1}{2}y^2-\left(\sum_{i=1}^{100}yz_ix_i-e^{x_iy}\right)}$ we tends towards a data-dependent $\alpha '$. Here a true optimizer in R like optim could be used, but we went with a more primitive approach of just taking the minimum over the interval $x\in\[0,5\]$. The reason for this interval is that we have seen, that nothing of interest happens outside of the interval $x\in\[0,0.5\]$.
+
+
+```{r, eval=FALSE}
+sekvens <- seq(0,0.5,length.out=50)
+out <- sapply(sekvens, function(x) rejec_dens5(x))
+mu <- function(a, b, n){
+  sekvens <- seq(a,b,length.out=n)
+  out <- sapply(sekvens, function(x) rejec_dens5(x))
+  sekvens[which.max(out)]
+}
+p <- function(y){
+  mu <- mu(0,0.5,500)
+  exp(-0.5*(y-mu)^2) #mu=0.24 is the maksimum value of the "density"
+}
+q <- function(x) rejec_dens5(x)
+alpha_prime <- min(sapply(sekvens, function(y) p(y)/q(y)))
+
+```
+```{r}
+mu(0,0.5,500)
+alpha_prime
+```
+
+The below plot shows, that $\frac{p(y)}{\alpha '} > q(y)$ in the areas of interest. However we do note, that the hardcoded $sd=1$ in the gaussian distribution might benefit from an optimization.
+
+
+```{r plot: Envelope vs density}
+input = data.frame(x = seq(-10, 10, length.out = 1000))
+ggplot(input, aes(x)) +
+  stat_function(fun = function(x) p(x)/alpha_prime, color = "red") + 
+  stat_function(fun = function(x) rejec_dens5(x), color = "blue") +
+  labs(x = "x", y = "Density") + xlim(0,1) +
+  theme_classic()
+```
+
+We implement our rejection sampler as follows
+
+
+```{r Rejection sampler based on Gaussian envelope, file = 'C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/CompStat/R/rejections_sampler.R'}
+reject_sampler = function(n, rProposal = rnorm, dProposal = p, dTarget = q) {
+  result = numeric(n)
+  mu <- mu(0,0.5,50)
+  for(i in 1:n) {
+    U = 1
+    ratio = 0
+    while(U > ratio) {
+      U = runif(1)
+      Y = rProposal(1,mean=mu)
+      ratio = alpha_prime * dTarget(Y) / dProposal(Y)
+    }
+    result[i] = Y
+  }
+  result
+}
+data <- reject_sampler(1000)
+
+```
+
+And as a visually control we consider the histogram of our simulated data against $q(x)\cdot 8\alpha '$. We are looking for proportionality between the simulated distrubution and the given porportional-density. Multiplication by 7 is chosen to make this proportionality clear.
+
+```{r Sanity plot: Simulated histogram'}
+dat.plot = data.frame(x = data)
+ggplot(dat.plot, aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 20, col = 'black', fill = 'white') +
+  stat_function(fun = function(x) rejec_dens5(x)*alpha_prime*7, color = "red") +
+  labs(x = "X", y = "Density") +
+  theme_classic()
+```
+### Profiling and benchmarking
+This rejection sampler is rather slow, so the next aim is to optimize.
+
+```{r}
+profvis(reject_sampler(1000))
+```
+
+The function *mu* takes a lot of time as well as the *rejec_dens5*. Assumably, the problem is the *rejec_dens5*, howeber there also is a sapply function in *mu* which knowingly can be optimized using Rcpp.
+
+```{r, include=FALSE}
+ Rcpp::sourceCpp("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/C++ scripts/Sapply_cpp.cpp")
+
+mu_opt <- function(a, b, n){
+  sekvens <- seq(a,b,length.out=n)
+  out <- sapply_cpp(sekvens, function(x) rejec_dens5(x))
+  sekvens[which.max(out)]
+}
+
+(bench <- microbenchmark::microbenchmark(mu(0,0.5,50), mu_opt(0,0.5,50)))
+autoplot(bench)
+
+```
+```{r Optimizec Rejection Sampling, eval=FALSE}
+Rcpp::sourceCpp("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/C++ scripts/Sapply_cpp.cpp")
+
+mu_opt <- function(a, b, n){
+  sekvens <- seq(a,b,length.out=n)
+  out <- sapply_cpp(sekvens, function(x) rejec_dens5(x))
+  sekvens[which.max(out)]
+}
+p_opt <- function(y){
+  mu <- mu_opt(0,0.5,50)
+  exp(-0.5*(y-mu)^2) #mu=0.24 is the maksimum value of the "density"
+}
+
+alpha_prime_opt <- min(sapply_cpp(sekvens, function(y) p(y)/q(y)))
+
+ratio_vec <- c(0)
+
+reject_sampler_opt = function(n, rProposal = rnorm, dProposal = p_opt, dTarget = q, trace = FALSE) {
+  count <- 0
+  result = numeric(n)
+  mu <- mu_opt(0,0.5,50)
+  for(i in 1:n) {
+    U <- 1
+    ratio <- 0
+    while(U > ratio) {
+      count <- count + 1
+      U <- runif(1)
+      Y <- rProposal(1,mean=mu)
+      ratio <- alpha_prime_opt * dTarget(Y) / dProposal(Y)
+      ratio_vec <<- append(ratio_vec, ratio)
+    }
+    result[i] <- Y
+  }
+  if(trace){
+    cat("Rejection frequency =", (count-n)/count, "\n")
+  }
+  result
+}
+```
+```{r}
+data1 <- reject_sampler(100)
+data2 <- reject_sampler_opt(100)
+
+
+(bench <- microbenchmark::microbenchmark(reject_sampler_opt(100), reject_sampler(100)))
+
+autoplot(bench)
+```
+It helped, and the optimized version is now a bit faster. However this is only a very tiny bit, and doing another profvis it is clear, that it is the *rejec_dens5* which are the big trouble maker.
+Optimizing *rejec_dens5* has proven to be quite a challenge, and therefore we instead tries to collect some low haning fruits by samling Random Variables as a vector once instead of individually. This will introduce some bookeeping, since we do not upfront know have many variables to simulate, but it can be handled by a generic wrapper building on the use of function factories in R:
+
+
+```{r, eval=FALSE}
+fkt_stream <- function(m, fkt, ...) {
+  args <- list(...)
+  cache <- do.call(fkt, c(m, args)) # Calls the function with n=m and arguments at told. E.g. ... could be mean and sd for fkt=rnorm
+  j <- 0
+  fact <- 1
+  next_rn <- function(r = m) {
+    j <<- j + 1
+    if(j > m) {                     # When all the generated RVs are used we generates new ones.
+      if(fact == 1 && r < m) fact <<- m / (m - r)
+      m <<- floor(fact * (r + 1))
+      cache <<- do.call(fkt, c(m, args))
+      j <<- 1
+    }
+    cache[j]                        # The fkt_stream function reterns the jth element of the RV vector
+  }
+  next_rn
+}
+```
+
+
+```{r, eval=FALSE}
+
+reject_sampler_opt2 = function(n, rProposal = rnorm, dProposal = p_opt, dTarget = q, trace = FALSE) {
+  count <- 0
+  result = numeric(n)
+  mu <- mu_opt(0,0.5,50)
+  
+  #Samling the random variables
+  U <- fkt_stream(m=n, fkt=runif)
+  Y <- fkt_stream(m=n, rProposal, mean=mu)
+  
+  for(i in 1:n) {
+    reject <- TRUE
+    while(reject) {
+      count <- count + 1
+      y <- Y(n-i)
+      ratio <- alpha_prime_opt * dTarget(y) / dProposal(y)
+      reject <- (U(n-i) > ratio)
+      ratio_vec <<- append(ratio_vec, ratio)
+    }
+    result[i] <- y
+  }
+  if(trace){
+    cat("Rejection frequency =", (count-n)/count, "\n")
+  }
+  result
+}
+```
+
+Before benchmarking this new implementation againt the original and optimized one, it is convenient to test whether we are still simulating from the desired distribution:
+
+```{r}
+data3 <- reject_sampler_opt2(n=1000, trace = TRUE)
+
+dat.plot = data.frame(x = data3)
+ggplot(dat.plot, aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 20, col = 'black', fill = 'white') +
+  stat_function(fun = function(x) rejec_dens5(x)*alpha_prime*8, color = "red") +
+  labs(x = "X", y = "Density") +
+  theme_classic()
+```
+It looks as expected, so we everything is good!
+
+
+```{r}
+(bench2 <- microbenchmark::microbenchmark(reject_sampler_opt(100), reject_sampler_opt2(100)))
+
+autoplot(bench2)
+```
+As expected we see a small change in the favour of *reject_sampler_opt2*, however, it might just be a coincidence sinde the median is actually performing better for the *reject_sampler_opt*. It therefore is not clear which one to chose for further investigations. No matter the case we will not do any more for now. We have a rejection frequency of 94%, which we really much would like to lower. Therefore we turn to adaptive rejection with a loglinear envelope instead.
 
 ## LogLinearEnvelope
 The *LogLinearEnvelope* function takes the following arguments:
@@ -52,6 +350,14 @@ $$
 a large number of times to decide if we accept or reject.
 
 For illustrations, we will use the following envelope for a Gaussian distribution:
+
+```{r}
+source("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/CompStat/R/poisson_density.R")
+source("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/CompStat/R/loglinear_envelope.R")
+source("C:/Users/Jakob/OneDrive - University of Copenhagen/Universitetet/Forsikringsmatematik/År 5/CompStat/CompStat/R/rejections_sampler.R")
+```
+
+
 ```{r Defining an envelope for quantile profiling, fig.width=7, fig.height=3}
 enve <- LogLinearEnvelope(get_rv("n"), c(-3, -1, 0, 1, 3))
 plot(enve)
