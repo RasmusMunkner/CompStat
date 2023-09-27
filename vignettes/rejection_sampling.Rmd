@@ -265,19 +265,31 @@ $$
 $$
 This clearly requires an efficient implementation of the above, hence which we provide through the *poisson_prior_log_f* and *poisson_prior_log_f_prime* - functions. These should be accessed through a RandomVariable by calling *get_rv("p")*.
 
-```{r}
-#WORK IN PROGRESS
+The following code snippets show how we can use our rejection sampling machinery to sample from this distribution.
+
+First we define the envelope and fit it to the distribution of interest.
+```{r Defining an envelope and fitting it}
+set.seed(0)
 enve <- LogLinearEnvelope(get_rv("p"), tangent_points = c(0.1, 0.8))
 plot(enve, grid=seq(0.001, 1, 0.001), logscale = T)
+plot(enve, grid=seq(0.001, 1, 0.001), logscale = T, compare = T)
 sampler <- rejection_sampler_factory(enve)
-sim <- sampler(1e5)
+tmp <- sampler(1e4, adapt_enve = T)
+rm(tmp)
+plot(environment(sampler)$enve, grid=seq(0.001, 1, 0.001), logscale = T)
+plot(environment(sampler)$enve, grid=seq(0.001, 1, 0.001), logscale = T, compare = T)
+set.seed(NULL)
+```
+
+After having fitted the distribution, we extract a (large) sample and plot the estimated density versus the true density. This is done on log-scale for easier comparison.
+```{r Simulating from the fitted envelope and investigate the fit}
+set.seed(0)
+sim <- sampler(1e6) # Takes a little while (~30s)
 simdens <- density(sim)
 plot(simdens$x, simdens$y %>% log())
 plot(simdens$x,  enve$base_rv$log_f(simdens$x))
 plot(simdens$x, log(simdens$y) - enve$base_rv$log_f(simdens$x), type = "l")
-profvis::profvis(sampler(1e6))
-U <- runif(1e8)
-profvis::profvis(enve$quant(U))
+set.seed(NULL)
 ```
 
 

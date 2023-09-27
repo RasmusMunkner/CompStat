@@ -42,8 +42,6 @@ rejection_sampler_factory <- function(enve, evalmode = 2){
   credibility <- 1#20 # Arbitrary
   rejection_sampler <- function(n, env = NULL, train = TRUE, adapt_enve = FALSE){
 
-    browser()
-
     if (is.null(env)){
       env <- enve
     }
