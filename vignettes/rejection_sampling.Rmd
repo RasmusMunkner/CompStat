@@ -292,5 +292,57 @@ plot(simdens$x, log(simdens$y) - enve$base_rv$log_f(simdens$x), type = "l")
 set.seed(NULL)
 ```
 
+Trying to implement an approximation of the target density.
+```{r}
+set.seed(0)
+enve_approx <- LogLinearEnvelope(get_rv("a"), tangent_points = c(0.1, 0.8))
+plot(enve_approx, grid=seq(0.001, 1, 0.001), logscale = T)
+plot(enve_approx, grid=seq(0.001, 1, 0.001), logscale = T, compare = T)
+sampler_approx <- rejection_sampler_factory(enve_approx)
+tmp <- sampler_approx(1e4, adapt_enve = T)
+rm(tmp)
+plot(environment(sampler_approx)$enve, grid=seq(0.001, 1, 0.001), logscale = T)
+plot(environment(sampler_approx)$enve, grid=seq(0.001, 1, 0.001), logscale = T, compare = T)
+set.seed(NULL)
+```
+
+```{r}
+z <- seq(8, 16)
+set.seed(0)
+set.seed(NULL)
+calls_sampler <- seq_along(x) %>% 
+  purrr::map(.f=function(i){
+    call("sampler", 2^z[i])
+  })
+calls_sampler_approx <- seq_along(x) %>% 
+  purrr::map(.f=function(i){
+    call("sampler_approx", 2^z[i])
+  })
+names(calls_sampler) <- paste0(c("ordinary"), 2^z)
+names(calls_sampler_approx) <- paste0(c("approx"), 2^z)
+all_calls <- c(calls_sampler, calls_sampler_approx)
+samplerdiff <- microbenchmark::microbenchmark(
+  list=all_calls
+)
+```
+
+```{r}
+intermediate <- samplerdiff %>%
+  as.data.frame() %>% 
+  tibble() %>% 
+  group_by(expr) %>% 
+  summarise(med_time = median(time)) %>%
+  mutate(nsamples = str_extract(expr %>% as.character(), "[0-9]+") %>% as.numeric(),
+         what = str_extract(expr %>% as.character(), "[^0-9]+") %>% as.factor()
+  )
+
+intermediate %>% 
+  ggplot(aes(x = log(nsamples), y = log(med_time), color = what)) +
+  geom_line() +
+  labs(x = "Log(Samples)", y = "Log(Median Time)")
+```
+
+
+
 
 
