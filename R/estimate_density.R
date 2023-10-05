@@ -9,9 +9,11 @@
 #' @param maxiter A positive integer. The maximal number of iterations
 #' @param bw0 A scalar. Initial guess at the optimal bandwidth.
 #' Defaults to maximum-likelihood Gaussian density
-#' @param kernel_code One of "gaussian", "uniform", "triangular" or "epanechnikov".
+#' @param kernel_code One of "gaussian" or "epanechnikov".
+#' @param cv_k Number of folds to use for cross validation.
 #' @param tol A scalar. Tolerance level bandwidth selection convergence
 #' @param reltol A scalar. Relative tolerance for bandwidth selection convergence
+#' @param cvtol A scalar. Absolute tolerance for cv-score improvement
 #' @param ... Additional arguments passed to estimate_l2norm.
 #'
 #' @return A list of bandwidths for estimation of the unknown density.
@@ -19,67 +21,81 @@
 #' @export
 #'
 #' @examples
-#' iter_bw_est(rnorm(1000), method = "matrix")
+#' set.seed(0)
+#' iter_bw_est(runif(100), maxiter = 10, kernel="e", cv_k = 3)
+#' res <- iter_bw_est(runif(100), maxiter = 30, kernel = "g", cv_k = 5) %>% as.data.frame()
+#' ggplot(res, aes(x = 1:nrow(res))) + geom_line(aes(y = bw))
+#' ggplot(res, aes(x = 1:nrow(res))) + geom_line(aes(y = cvscore))
 #' iter_bw_est(4*rbinom(1000, 1, 0.5) + rnorm(1000))
+#' set.seed(NULL)
 iter_bw_est <- function(x,
-                          maxiter = 3L,
-                          kernel_code = "e",
-                          bw0 = NULL,
-                          tol = 1e-7,
-                          reltol = 1e-3,
-                          ...
-                          ){
+                        maxiter = 3L,
+                        kernel = "e",
+                        bw0 = NULL,
+                        cv_k = 5,
+                        tol = 1e-7,
+                        reltol = 1e-3,
+                        cvtol = -Inf,
+                        ...
+                        ){
+  #Initialize containers -------------------------------------------------------
+
+  if (!("CompStatKernel" %in% class(kernel))){
+    tryCatch(
+      error = function(cnd){
+        stop("Kernel must be specified as either a identifying string or an object of class 'CompStatKernel'")
+      },
+      kernel <- get_kernel(kernel)
+    )
+  }
+
   bw_seq <- rep(NA, maxiter + 1)
   if (is.null(bw0)){
+    if (sd(x) == 0){
+      stop("Standard deviation of x is 0. Automatic bandwidth selection is not meaningful.")
+    }
     bw_seq[1] <- 0.9 * sd(x) * length(x)^(1/5) # Silverman
   } else {
-    bw_seq[1] <- bw0 # Prespecified guess
+    bw_seq[1] <- bw0 # Pre-specified guess
   }
+
   fnorm_seq <- rep(NA, maxiter+1)
 
-  H <- get_kernel(kernel_code)
+  cv_seq <- rep(NA, maxiter + 1)
+  cv_seq[1] <- cvscore(kernel, x, bw_seq[1], cv_k)
+
+  # Pre-computed quantities
+  sigmaK4 <- kernel$sigma2^2
+  n <- length(x)
+
+  # Iterate --------------------------------------------------------------------
   for (i in 1:maxiter){
-    fnorm_seq[i] <- estimate_l2norm(x, kernel_code, bw_seq[i], ...)
-    bw_seq[i+1] <- (H$l2norm / fnorm_seq[i] / H$sigma2^2 / length(x))^(1/5)
-    if (abs(bw_seq[i+1] - bw_seq[i]) < tol ||
-        abs(bw_seq[i+1]-bw_seq[i]) / bw_seq[i] < reltol){
+
+    fnorm_seq[i] <- l2norm(kernel, x, bw_seq[i], ...)
+
+    bw_seq[i+1] <- (kernel$l2norm / fnorm_seq[i] / sigmaK4 / n)^(1/5)
+    cv_seq[i+1] <- cvscore(kernel, x, bw_seq[i+1], cv_k)
+
+    if (
+      abs(bw_seq[i+1] - bw_seq[i]) < tol ||
+      abs(bw_seq[i+1]-bw_seq[i]) / bw_seq[i] < reltol ||
+      !is.finite(cv_seq[i+1]) || # Can happen that the epanechnikov kernel misses a point during cv. Then cv score = -Inf
+      cv_seq[i+1] - cv_seq[i] < cvtol
+        ){
       break
     }
+
   }
 
+  # Return results -------------------------------------------------------------
   tibble::tibble(
     bw=bw_seq[!is.na(bw_seq)],
-    fnorm=fnorm_seq[!is.na(bw_seq)]
+    fnorm=fnorm_seq[!is.na(bw_seq)],
+    cvscore=cv_seq[!is.na(bw_seq)]
   )
 
 }
 
-#' Compiles kernel density estimate
-#'
-#' @param x Data used for density estimation
-#' @param bw Bandwidth
-#' @param kernel Kernel used for smoothing. Defaults to Gaussian
-#'
-#' @return The estimated density function
-#' @export
-#'
-#' @examples
-#' set.seed(0)
-#' x <- rnorm(1000)
-#' z <- seq(-3,3,0.01)
-#' dens_hat <- compile_density(z, x, 0.1)
-#' ggplot() +
-#'   geom_histogram(aes(x = x, y = after_stat(density))) +
-#'   geom_line(aes(x = z, y = dens_hat), color = "red")
-#' set.seed(NULL)
-#'
-compile_density <- function(z, x, bw, kernel_code = "g"){
-  H <- get_kernel(kernel_code)$kernel
-  z %>%
-    purrr::map_dbl(.f=function(z){
-      mean(H((z-x)/bw)/bw)
-    })
-}
 
 #' Plot density estimates
 #'

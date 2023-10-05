@@ -2,7 +2,7 @@
 % Please edit documentation in R/kernels.R
 \name{get_kernel}
 \alias{get_kernel}
-\title{Access commonly used kernels}
+\title{Instantiate a CompStatKernel}
 \usage{
 get_kernel(kernel_code)
 }

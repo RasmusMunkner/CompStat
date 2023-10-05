@@ -4,7 +4,7 @@
 \alias{plot.Envelope}
 \title{Plot a LogLinearEnvelope with the function is is an envelope to}
 \usage{
-\method{plot}{Envelope}(enve, grid = seq(-6, 6, 0.001), logscale = FALSE)
+\method{plot}{Envelope}(enve, grid = seq(-6, 6, 0.001), logscale = FALSE, compare = FALSE)
 }
 \arguments{
 \item{enve}{The LogLinearEnvelope.}
@@ -21,4 +21,6 @@ Plot a LogLinearEnvelope with the function is is an envelope to
 enve <- LogLinearEnvelope(get_rv(), c(-2,0,1))
 plot(enve)
 plot(enve, logscale=TRUE)
+plot(enve, compare=T)
+plot(enve, logscale=T, compare=T)
 }

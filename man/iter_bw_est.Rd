@@ -7,10 +7,12 @@
 iter_bw_est(
   x,
   maxiter = 3L,
-  kernel_code = "e",
+  kernel = "e",
   bw0 = NULL,
+  cv_k = 5,
   tol = 1e-07,
   reltol = 0.001,
+  cvtol = -Inf,
   ...
 )
 }
@@ -19,16 +21,20 @@ iter_bw_est(
 
 \item{maxiter}{A positive integer. The maximal number of iterations}
 
-\item{kernel_code}{One of "gaussian", "uniform", "triangular" or "epanechnikov".}
-
 \item{bw0}{A scalar. Initial guess at the optimal bandwidth.
 Defaults to maximum-likelihood Gaussian density}
+
+\item{cv_k}{Number of folds to use for cross validation.}
 
 \item{tol}{A scalar. Tolerance level bandwidth selection convergence}
 
 \item{reltol}{A scalar. Relative tolerance for bandwidth selection convergence}
 
+\item{cvtol}{A scalar. Absolute tolerance for cv-score improvement}
+
 \item{...}{Additional arguments passed to estimate_l2norm.}
+
+\item{kernel_code}{One of "gaussian" or "epanechnikov".}
 }
 \value{
 A list of bandwidths for estimation of the unknown density.
@@ -40,6 +46,11 @@ The method runs until convergence of bandwidth selection and returns all
 bandwidth estimates. To access density estimates, use compile_density.
 }
 \examples{
-iter_bw_est(rnorm(1000), method = "matrix")
+set.seed(0)
+iter_bw_est(runif(10000), maxiter = 10, kernel_code="e", cv_k = 3)
+res <- iter_bw_est(runif(100), maxiter = 30, kernel_code="g", cv_k = 5) \%>\% as.data.frame()
+ggplot(res, aes(x = 1:nrow(res))) + geom_line(aes(y = bw))
+ggplot(res, aes(x = 1:nrow(res))) + geom_line(aes(y = cvscore))
 iter_bw_est(4*rbinom(1000, 1, 0.5) + rnorm(1000))
+set.seed(NULL)
 }

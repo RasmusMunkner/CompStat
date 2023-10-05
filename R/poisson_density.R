@@ -152,8 +152,25 @@ get_rv <- function(key = "n"){
                             log_f_prime = poisson_prior_log_f_prime),
          "a"=RandomVariable(log_f = poisson_prior_log_f_approx,
                             log_f_prime = poisson_prior_log_f_prime
+                            ),
+         "e"=RandomVariable(f = function(z) 3/4 * (1-z^2) * (abs(z) < 1),
+                            log_f_prime = function(z) - 2*z / (1 - z^2) * (abs(z) < 1)
                             )
          )
+}
+
+#' Density plot for random variables
+#'
+#' @param rv A RandomVariable
+#' @param x A grid of points for which to plot the density
+#'
+#' @return A plot of the density of the rv
+#' @export
+#'
+#' @examples
+plot.RandomVariable <- function(rv, x = seq(-3, 3, 0.01)){
+  ggplot2::ggplot(mapping = ggplot2::aes(x = x, y = rv$f(x))) +
+    ggplot2::geom_line()
 }
 
 

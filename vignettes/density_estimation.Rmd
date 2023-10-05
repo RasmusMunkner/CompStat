@@ -37,13 +37,17 @@ The *iter_bw_est* function is based on the algorithm:
 2. For $m = 1, \ldots, M$ do the following:
   + Compute the best-estimate for the $L_2$-norm of the unknown density $f$
   using the formula (NRH Chapter 2, Unnumbered equation):
+  
 $$
 \left|\left|\tilde{f}''_m\right|\right|_2^2 = \frac{1}{n^2h_m^6} \sum_{i=1}^{n}\sum_{j=1}^n \int H''\left(\frac{x-x_i}{h_m}\right) \cdot H''\left(\frac{x-x_j}{h_m}\right) dx
 $$
+
   + Compute the AMISE-optimal bandwidth using the update rule (NRH Chapter 2, Equation 2.3)
+  
 $$
 h_{m+1} = \left(\frac{||K||_2^2}{||\tilde{f}_m''||_2^2\sigma_K^4}\right)^{1/5}n^{-1/5}
 $$
+
 3. Return the sequence of bandwidths $(h_0, \ldots, h_M$).
 
 The motivation for the algorithm is that (NRH Chapter 2, Equation 2.3) could be used to compute the optimal bandwidth if true $||f||_2^2$ is known. Since this is not the case, the above algorithm instead uses the current best-estimate for $||f||_2^2$ as a plug-in estimate. This leads to a sequence of optimal-given-the-previous bandwidths.
@@ -58,10 +62,127 @@ $$
 Hence it serves to simply compute the estimated density once a bandwidth has been selected. We present two different implementations:
 * A simple, vectorized implementation.
 * A more complex implementation based on rolling means.
+* A Rcpp implementation.
 These implementations are compared to one another and *stats::density* with respect to their estimates and runtime.
 
 ## plot_density
 The *plot_density* density function serves as a graphical tool for determining if density estimates are conform with corresponding histogram representations. We perform no formal testing of this.
+
+# On the optimization of L2-norm calculations
+For step (2) of the *iter_bw_est* algorithm, we need to compute the L2-norm, of the estimated density. For a general implementation this must be done numerically, but given that we use a specific kernel, we can simplify the expression notably.
+
+## The Epanechnikov Kernel
+For $H(x) = \frac{3}{4}(1-x^2)1_{(-1,1)}(x)$ we get $H''(x) = -\frac{3}{2}1_{(-1,1)}(x)$ and thus
+
+$$
+\int H''\left(\frac{x-x_i}{r}\right)H''\left(\frac{x-x_j}{r}\right)dx =
+\frac{9}{4}\int 1_{(\max(x_i-r, x_j-r), \min(x_i+r, x_j+r))}dx =
+\frac{9}{4}(2r-|x_i-x_j|)^+
+$$
+Thus the L2-norm becomes
+
+$$
+||\tilde{f}_{m+1}''||_2^2 = \frac{9}{4}\frac{1}{n^2h_m^6} \sum_{i=1}^{n}\sum_{j=1}^n (2h_m-|x_i-x_j|)^+
+$$
+
+## The Gaussian Kernel
+For $H(x) = \frac{1}{\sqrt{2\pi}}e^{-x^2/2}$ we get $H''(x) = (x^2-1)H(x)$ and thus
+
+$$
+\int H''\left(\frac{x-x_i}{r}\right)H''\left(\frac{x-x_j}{r}\right)dx =
+\int \left(\left(\frac{x-x_i}{r}\right)^2 - 1\right)\left(\left(\frac{x-x_j}{r}\right)^2 - 1\right)H\left(\frac{x-x_i}{r}\right)H\left(\frac{x-x_j}{r}\right)dx
+$$
+
+Note initially that we can write
+$$
+x_i = \frac{x_i+x_j}{2} + \frac{x_i - x_j}{2} := \bar{x}_{ij} + \delta_{ij} \\
+x_j = \frac{x_i+x_j}{2} - \frac{x_i - x_j}{2} := \bar{x}_{ij} - \delta_{ij}
+$$
+Thus we can perform a reparametrization of the intergral by shifting $x := x + \bar{x}_{ij}$. We then obtain
+$$
+\int \left(\left(\frac{x-x_i}{r}\right)^2 - 1\right)\left(\left(\frac{x-x_j}{r}\right)^2 - 1\right)H\left(\frac{x-x_i}{r}\right)H\left(\frac{x-x_j}{r}\right)dx = \\
+\int \left(\left(\frac{x-\delta_{ij}}{r}\right)^2 - 1\right)\left(\left(\frac{x+\delta_{ij}}{r}\right)^2 - 1\right)H\left(\frac{x-\delta_{ij}}{r}\right)H\left(\frac{x+\delta_{ij}}{r}\right)dx
+$$
+
+We start by simplifying the product of the Gaussian densities. Note that $H(\frac{x-\delta_{ij}}{r})$ is the density for a $\mathcal{N}(\delta_{ij},r^2)$-distributed variable, hence
+
+$$
+H\left(\frac{x-\delta_{ij}}{r}\right)H\left(\frac{x+\delta_{ij}}{r}\right) =
+\left(\frac{1}{\sqrt{2\pi}}\right)^2e^{-\frac{(x-\delta_{ij})^2 + (x+\delta_{ij})^2}{2r^2}}
+$$
+Considering the fraction in the exponent
+$$
+-\frac{(x-\delta_{ij})^2 + (x+\delta_{ij})^2}{2r^2} =
+-\frac{2x^2 - 2x(\delta_{ij}-\delta_{ij}) + \delta_{ij}^2 + \delta_{ij}^2}{2r^2} =
+-\frac{x^2}{2q^2} - \frac{\delta_{ij}^2}{2q^2}
+$$
+
+Plugging this back into the previous expression yields
+
+$$
+H\left(\frac{x-\delta_{ij}}{r}\right)H\left(\frac{x+\delta_{ij}}{r}\right) =
+\left(\frac{1}{\sqrt{2\pi}}\right)^2e^{-\frac{x^2}{2q^2}-\frac{\delta_{ij}^2}{2q^2}} =
+\frac{\sqrt{2\pi}q}{2\pi}\frac{1}{\sqrt{2\pi}q}e^{-\frac{x^2}{2q^2}} \cdot e^{-\frac{\delta_{ij}^2}{2q^2}} = \\
+\frac{r}{2\sqrt{\pi}}e^{-\frac{\delta_{ij}^2}{2q^2}}H_q\left(x\right) := c_{ij}H_q(x)
+$$
+Now for the other factor in the integral, note that
+$$
+\left(\left(\frac{x-\delta_{ij}}{r}\right)^2 - 1\right)\left(\left(\frac{x+\delta_{ij}}{r}\right)^2 - 1\right) =
+\left(\frac{(x-\delta_{ij})^2 - r^2}{r^2}\right)\left(\frac{(x+\delta_{ij})^2 - r^2}{r^2}\right) =
+\frac{1}{r^4}((x-\delta_{ij})^2 - r^2)((x+\delta_{ij})^2 - r^2)
+$$
+Multiplying out, we obtain
+$$
+((x-\delta_{ij})^2 - r^2)((x+\delta_{ij})^2 - r^2) = \\
+(x^2 - 2x\delta_{ij} + \delta_{ij}^2 - r^2)(x^2 + 2x\delta_{ij} + \delta_{ij}^2 - r^2) = \\
+x^4 + x^2(-2\delta_{ij}^2 - 2r^2) + (\delta_{ij}^2 - r^2)^2 = \\
+x^4 -2x^2(\delta_{ij}^2 + r^2) + (\delta_{ij}^2 - r^2)^2 := p_{ij}(x)
+$$
+
+Plugging these expressions back into the integral, we obtain
+
+$$
+\int \left(\left(\frac{x-x_i}{r}\right)^2 - 1\right)\left(\left(\frac{x-x_j}{r}\right)^2 - 1\right)H\left(\frac{x-x_i}{r}\right)H\left(\frac{x-x_j}{r}\right)dx = \\
+\int \frac{1}{r^4}c_{ij}p_{ij}(x)H_q(x)dx = \\
+\frac{1}{r^4}c_{ij}E\big[p_{ij}(X_{ij})\big] = \\
+\frac{1}{r^4}c_{ij}\left(E[X^4] - 2(\delta_{ij}^2 + r^2)E[X^2] + (\delta_{ij}^2 - r^2)^2\right) = \\
+\frac{1}{r^4}c_{ij}\left(3q^4 - 2(\delta_{ij}^2 + r^2)q^2 + (\delta_{ij}^2 - r^2)^2\right)
+$$
+It thus follows that
+$$
+||f||_2^2 = \frac{1}{n^2r^{10}}\sum_{i=1}^n\sum_{j=1}^n c_{ij}(3q^4 - 2(\delta_{ij}^2 + r^2)q^2 + (\delta_{ij}^2 - r^2)^2)
+$$
+
+# Testing the implementation
+First of all, it seems reasonable to benchmark our implementations of density evaluation
+
+```{r Benchmarking Density Evaluation}
+H <- get_kernel("g")
+G <- get_kernel("e")
+x <- rnorm(10000)
+microbenchmark::microbenchmark(
+  kernel_density(H, x, 1),
+  kernel_density(H, x, 1, method="r"),
+  kernel_density(G, x, 1),
+  kernel_density(G, x, 1, method="r")
+)
+
+profvis::profvis(
+  kernel_density(H, x, 1)
+)
+
+
+profvis::profvis(
+  kernel_density(H, x, 1, method = "r")
+)
+
+```
+
+
+
+
+
+
 
 # TODO
 * Implement CV stopping for *iter_dens_est*.

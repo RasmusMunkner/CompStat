@@ -17,4 +17,5 @@ Log-density for the poisson prior (Example Distribution)
 }
 \examples{
 poisson_prior_log_f(1)
+seq(1e-4, 1, 1e-4) \%>\% plot(., poisson_prior_log_f(.), type="l")
 }
