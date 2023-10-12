@@ -27,13 +27,14 @@ NumericVector eval_kdensC(String kcode, NumericVector grid, NumericVector x, dou
     }
 
   } else { //Assuming Epanechnikov Kernel
+    double tmp;
 
     for(int i = 0; i < m; ++i){
       for(int j = 0; j < n; ++j){
-        NumericVector tmp(2);
-        tmp[0] = 0;
-        tmp[1] = 1 - pow((grid[i] - x[j])/bw,2);
-        out[i] += max(tmp);
+        tmp = pow((grid[i] - x[j])/bw,2);
+        if (tmp < 1){
+          out[i] += 1 - tmp;
+        }
       }
       out[i] /= bw * n * 4 / 3;
     }
