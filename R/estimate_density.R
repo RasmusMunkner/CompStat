@@ -22,10 +22,13 @@
 #'
 #' @examples
 #' set.seed(0)
-#' iter_bw_est(runif(100), maxiter = 10, kernel="e", cv_k = 3)
+#' iter_bw_est(runif(100), maxiter = 10, kernel="e", cv_k = 0)
+#'
+#' profvis::profvis(iter_bw_est(runif(5000), maxiter = 10, kernel="e", cv_k = 3))
+#'
 #' res <- iter_bw_est(runif(100), maxiter = 30, kernel = "g", cv_k = 5) %>% as.data.frame()
-#' ggplot(res, aes(x = 1:nrow(res))) + geom_line(aes(y = bw))
-#' ggplot(res, aes(x = 1:nrow(res))) + geom_line(aes(y = cvscore))
+#' ggplot2::ggplot(res, ggplot2::aes(x = 1:nrow(res))) + ggplot2::geom_line(ggplot2::aes(y = bw))
+#' ggplot2::ggplot(res, ggplot2::aes(x = 1:nrow(res))) + ggplot2::geom_line(ggplot2::aes(y = cvscore))
 #' iter_bw_est(4*rbinom(1000, 1, 0.5) + rnorm(1000))
 #' set.seed(NULL)
 iter_bw_est <- function(x,
@@ -33,6 +36,7 @@ iter_bw_est <- function(x,
                         kernel = "e",
                         bw0 = NULL,
                         cv_k = 5,
+                        cv_method = "r",
                         tol = 1e-7,
                         reltol = 1e-3,
                         cvtol = -Inf,
@@ -40,14 +44,7 @@ iter_bw_est <- function(x,
                         ){
   #Initialize containers -------------------------------------------------------
 
-  if (!("CompStatKernel" %in% class(kernel))){
-    tryCatch(
-      error = function(cnd){
-        stop("Kernel must be specified as either a identifying string or an object of class 'CompStatKernel'")
-      },
-      kernel <- get_kernel(kernel)
-    )
-  }
+  kernel <- CompStatKernel(kernel)
 
   bw_seq <- rep(NA, maxiter + 1)
   if (is.null(bw0)){
@@ -61,8 +58,11 @@ iter_bw_est <- function(x,
 
   fnorm_seq <- rep(NA, maxiter+1)
 
-  cv_seq <- rep(NA, maxiter + 1)
-  cv_seq[1] <- cvscore(kernel, x, bw_seq[1], cv_k)
+  if (cv_k > 0){
+    cv_seq <- rep(NA, maxiter + 1)
+    cv_seq[1] <- cvscore(kernel, x, bw_seq[1], cv_k, method=cv_method)
+  }
+
 
   # Pre-computed quantities
   sigmaK4 <- kernel$sigma2^2
@@ -74,25 +74,42 @@ iter_bw_est <- function(x,
     fnorm_seq[i] <- l2norm(kernel, x, bw_seq[i], ...)
 
     bw_seq[i+1] <- (kernel$l2norm / fnorm_seq[i] / sigmaK4 / n)^(1/5)
-    cv_seq[i+1] <- cvscore(kernel, x, bw_seq[i+1], cv_k)
+
+    if (cv_k > 0){
+      cv_seq[i+1] <- cvscore(kernel, x, bw_seq[i+1], cv_k, method=cv_method)
+    }
+
 
     if (
       abs(bw_seq[i+1] - bw_seq[i]) < tol ||
-      abs(bw_seq[i+1]-bw_seq[i]) / bw_seq[i] < reltol ||
-      !is.finite(cv_seq[i+1]) || # Can happen that the epanechnikov kernel misses a point during cv. Then cv score = -Inf
-      cv_seq[i+1] - cv_seq[i] < cvtol
+      abs(bw_seq[i+1]-bw_seq[i]) / bw_seq[i] < reltol
         ){
       break
     }
 
+    if (cv_k > 0){
+      if (
+        !is.finite(cv_seq[i+1]) ||
+        cv_seq[i+1] - cv_seq[i] < cvtol
+        ){
+        break
+      }
+    }
   }
 
   # Return results -------------------------------------------------------------
-  tibble::tibble(
+  result <- tibble::tibble(
     bw=bw_seq[!is.na(bw_seq)],
-    fnorm=fnorm_seq[!is.na(bw_seq)],
-    cvscore=cv_seq[!is.na(bw_seq)]
+    fnorm=fnorm_seq[!is.na(bw_seq)]
   )
+  if (cv_k > 0){
+    result %>%
+      dplyr::mutate(cvscore=cv_seq[!is.na(bw_seq)])
+  } else {
+    result
+  }
+
+
 
 }
 
@@ -108,15 +125,16 @@ iter_bw_est <- function(x,
 #' @export
 #'
 #' @examples
-#' plot_density(rnorm(1000), 0.1)
-plot_density <- function(x, bw, kernel_code = "g", grid_length = 200){
-  z <- seq(range(x)[1] - 3*max(bw), range(x)[2] + 3*max(bw), length.out=grid_length)
+#' plot_density(rnorm(1000), c(0.1, 0.5))
+plot_density <- function(x, bw, kernel = "g", grid_length = 200){
+  kernel <- CompStatKernel(kernel)
+  grid <- seq(range(x)[1] - 3*max(bw), range(x)[2] + 3*max(bw), length.out=grid_length)
   bw %>%
     purrr::map_dfr(.f=function(h){
       tibble::tibble(
         bw = h,
-        y = compile_density(z, x, h, kernel_code),
-        x = z
+        y = kernel_density(kernel, x, h, grid),
+        x = grid
       ) %>%
         dplyr::mutate(bw = factor(bw))
     }) %>%

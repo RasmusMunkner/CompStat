@@ -41,8 +41,6 @@ NumericVector eval_kdensC(String kcode, NumericVector grid, NumericVector x, dou
 
   }
 
-
-
   return out;
 
 }
