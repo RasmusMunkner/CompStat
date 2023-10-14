@@ -24,7 +24,7 @@ Calculate an estimate of the L2-norm for the current kernel approximation
 \examples{
 set.seed(0)
 x <- rnorm(100)
-H <- get_kernel("g")
+H <- CompStatKernel("g")
 l2norm(H, x, 1)
 set.seed(NULL)
 }

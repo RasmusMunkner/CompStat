@@ -168,6 +168,12 @@ get_rv <- function(key = "n"){
 #' @export
 #'
 #' @examples
+#' X1 <- get_rv("n")
+#' X2 <- get_rv("g")
+#' X3 <- get_rv("p")
+#' plot(X1)
+#' plot(X2)
+#' plot(X3)
 plot.RandomVariable <- function(rv, x = seq(-3, 3, 0.01)){
   ggplot2::ggplot(mapping = ggplot2::aes(x = x, y = rv$f(x))) +
     ggplot2::geom_line()

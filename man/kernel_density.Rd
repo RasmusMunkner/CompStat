@@ -13,7 +13,8 @@ kernel_density(
   from = NULL,
   to = NULL,
   cut = 3,
-  method = "c"
+  method = "c",
+  return_grid = F
 )
 }
 \arguments{
@@ -32,14 +33,20 @@ Compiles kernel density estimate
 \examples{
 set.seed(0)
 x <- rnorm(1000)
-grid <- seq(-3,3,0.01)
-kern <- get_kernel("g")
-dens_hatR <- density(kern, x, 1, method = "r", grid = grid)
-dens_hatC <- density(kern, x, 1, method = "c", grid = grid)
-max(abs(dens_hatR - dens_hatC))
-ggplot() +
-  geom_histogram(aes(x = x, y = after_stat(density))) +
-  geom_line(aes(x = z, y = dens_hat), color = "red")
 set.seed(NULL)
+grid <- density(x, 0.2, kernel = "g")$x
+
+microbenchmark::microbenchmark(
+kernel_density("e", x, 0.2, method="c", grid = grid),
+kernel_density("e", x, 0.2, method="r", grid = grid),
+density(x, 0.2 * sqrt(CompStatKernel("e")$sigma2), kernel="e")
+)
+
+microbenchmark::microbenchmark(
+kernel_density("g", x, 0.2, method="c"),
+kernel_density("g", x, 0.2, method="r"),
+density(x, 0.2, kernel="g")
+)
+
 
 }

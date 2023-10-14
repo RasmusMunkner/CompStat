@@ -82,49 +82,6 @@ epanechnikov_l2norm_running <- function(x, r){
   )
 }
 
-epanechnikov_l2norm_running2 <- function(x, r, agg = TRUE, debug = FALSE){
-  if (debug){
-    browser()
-  }
-  x <- sort(x)
-  n <- length(x)
-  x[n+1] <- Inf
-  results <- 0#matrix(rep(0, n^2), nrow=n)
-  i <- 1
-  j <- 1
-  k <- 1
-  PUSH <- TRUE
-  while(j <= n){
-    if (PUSH){
-      if (x[i+1] - x[j] < 2*r) { # Can we push further? - Push further
-        i <- i + 1
-      } else if (x[i] - x[j] < 2*r) { # Do we stop pushing?
-        for (s in k:i){
-          #results[j:s, s] <- 2*r - (x[s] - x[j:s])
-          results <- results + sum(2*r - (x[s] - x[j:s]))
-        }
-        k <- i+1
-        j <- j+1
-        PUSH <- FALSE
-      }
-    } else {
-      if(x[i+1] - x[j] < 2*r){
-        PUSH <- TRUE
-      } else {
-        j <- j+1
-      }
-    }
-  }
-  if (agg){
-    return(
-      (2 * sum(results) - 2*r*n) * 9/4 / n^2 / r^6
-    )
-  } else {
-    return(results)
-  }
-
-}
-
 #' L2 Norm based on exact binning
 #'
 #' @inheritParams epanechnikov_l2norm_matrix
@@ -163,4 +120,45 @@ epanechnikov_l2norm_binning <- function(
     }
     return(sum(partial_results) / length(x)^2)
   }
+}
+
+#' Benchmark for Epanechnikov L2-Calculations
+#'
+#' @param N_seq Powers of 2 that we test the implementation for
+#' @param bw Bandwidth used for estimators
+#'
+#' @return A data frame containing benchmark information
+#' @export
+#'
+#' @examples
+#' bm <- benchmark_epanechnikov_l2norm(N_seq = 3:12)
+#' bm %>%
+#' ggplot2::ggplot(ggplot2::aes(x = log(N), y = log(Time), color = Method)) +
+#' ggplot2::geom_line() +
+#' ggplot2::geom_point()
+benchmark_epanechnikov_l2norm <- function(N_seq = 3:12, bw = 0.2){
+
+  set.seed(0)
+  xs <- N_seq %>% purrr::map(.f = function(n){rnorm(2^n)})
+  set.seed(NULL)
+
+  bm <- N_seq %>%
+    purrr::imap_dfr(.f = function(n, i){
+      calls <- list(
+        call("epanechnikov_l2norm_matrix", x = xs[[i]], r=bw),
+        call("epanechnikov_l2norm_binning", x = xs[[i]], r=bw),
+        call("epanechnikov_l2norm_running", x = xs[[i]], r=bw),
+        call("epanechnikov_l2norm_runningC", x = xs[[i]], r=bw)
+      )
+      names(calls) <- c("matrix", "binning", "running", "running_cpp")
+      microbenchmark::microbenchmark(
+        list=calls
+      ) %>%
+        dplyr::group_by(expr) %>%
+        dplyr::summarise(Time = median(time)) %>%
+        dplyr::mutate(N = 2^n, Method = expr) %>%
+        dplyr::select(-c(expr))
+    })
+
+  bm
 }

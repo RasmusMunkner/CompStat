@@ -156,7 +156,7 @@ $$
 # Testing the implementation
 First of all, it seems reasonable to benchmark our implementations of density evaluation
 
-```{r Benchmarking Density Evaluation}
+```{r Benchmarking Density Evaluation, eval = F, echo = T}
 H <- get_kernel("g")
 G <- get_kernel("e")
 x <- rnorm(10000)

@@ -10,13 +10,15 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
-// getOne
-double getOne();
-RcppExport SEXP _CompStat_getOne() {
+// epanechnikov_l2norm_runningC
+double epanechnikov_l2norm_runningC(NumericVector x, double r);
+RcppExport SEXP _CompStat_epanechnikov_l2norm_runningC(SEXP xSEXP, SEXP rSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    rcpp_result_gen = Rcpp::wrap(getOne());
+    Rcpp::traits::input_parameter< NumericVector >::type x(xSEXP);
+    Rcpp::traits::input_parameter< double >::type r(rSEXP);
+    rcpp_result_gen = Rcpp::wrap(epanechnikov_l2norm_runningC(x, r));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -36,7 +38,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_CompStat_getOne", (DL_FUNC) &_CompStat_getOne, 0},
+    {"_CompStat_epanechnikov_l2norm_runningC", (DL_FUNC) &_CompStat_epanechnikov_l2norm_runningC, 2},
     {"_CompStat_eval_kdensC", (DL_FUNC) &_CompStat_eval_kdensC, 4},
     {NULL, NULL, 0}
 };

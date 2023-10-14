@@ -195,7 +195,7 @@ set.seed(NULL)
 plot(environment(sampler_medium)$enve)
 ```
 
-```{r Envelope with many tangent points, fig.width=7, fig.height=3}
+```{r Envelope with many tangent points, fig.width=7, fig.height=3, eval=F}
 enve_many <- LogLinearEnvelope(get_rv("n"))
 sampler_many <- rejection_sampler_factory(enve_medium, evalmode = 2)
 set.seed(0)
@@ -206,7 +206,7 @@ set.seed(NULL)
 plot(environment(sampler_many)$enve)
 ```
 Now, we perform a benchmark
-```{r Adaptive Sampler Benchmark, cache = T}
+```{r Adaptive Sampler Benchmark, cache = T, eval=F}
 z <- 8:16
 x <- 2^z
 calls_few <- seq_along(x) %>% 
@@ -231,11 +231,11 @@ adaptive_sampler_bm <- microbenchmark::microbenchmark(
 ```
 And lets do some plots
 
-```{r Autoplot Adaptation Benchmark, fig.width=7, fig.height=3}
+```{r Autoplot Adaptation Benchmark, fig.width=7, fig.height=3, eval=F}
 adaptive_sampler_bm %>% autoplot()
 ```
 
-```{r Plot Adaptation Benchmark, fig.width=7, fig.height=3}
+```{r Plot Adaptation Benchmark, fig.width=7, fig.height=3, eval=F}
 intermediate <- adaptive_sampler_bm %>%
   as.data.frame() %>% 
   as.tibble() %>% 
@@ -268,7 +268,7 @@ This clearly requires an efficient implementation of the above, hence which we p
 The following code snippets show how we can use our rejection sampling machinery to sample from this distribution.
 
 First we define the envelope and fit it to the distribution of interest.
-```{r Defining an envelope and fitting it}
+```{r Defining an envelope and fitting it, eval=F}
 set.seed(0)
 enve <- LogLinearEnvelope(get_rv("p"), tangent_points = c(0.1, 0.8))
 plot(enve, grid=seq(0.001, 1, 0.001), logscale = T)
@@ -282,7 +282,7 @@ set.seed(NULL)
 ```
 
 After having fitted the distribution, we extract a (large) sample and plot the estimated density versus the true density. This is done on log-scale for easier comparison.
-```{r Simulating from the fitted envelope and investigate the fit}
+```{r Simulating from the fitted envelope and investigate the fit, eval = F}
 set.seed(0)
 sim <- sampler(1e6) # Takes a little while (~30s)
 simdens <- density(sim)
@@ -293,7 +293,7 @@ set.seed(NULL)
 ```
 
 Trying to implement an approximation of the target density.
-```{r}
+```{r eval = F}
 set.seed(0)
 enve_approx <- LogLinearEnvelope(get_rv("a"), tangent_points = c(0.1, 0.8))
 plot(enve_approx, grid=seq(0.001, 1, 0.001), logscale = T)
@@ -306,7 +306,7 @@ plot(environment(sampler_approx)$enve, grid=seq(0.001, 1, 0.001), logscale = T, 
 set.seed(NULL)
 ```
 
-```{r}
+```{r eval = F}
 z <- seq(8, 16)
 set.seed(0)
 set.seed(NULL)
@@ -326,7 +326,7 @@ samplerdiff <- microbenchmark::microbenchmark(
 )
 ```
 
-```{r}
+```{r eval = F}
 intermediate <- samplerdiff %>%
   as.data.frame() %>% 
   tibble() %>% 

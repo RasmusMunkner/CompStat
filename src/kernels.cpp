@@ -4,12 +4,6 @@ using namespace Rcpp;
 using namespace std;
 
 // [[Rcpp::export]]
-double getOne(){
-  double n = 1;
-  return exp(n);
-}
-
-// [[Rcpp::export]]
 NumericVector eval_kdensC(String kcode, NumericVector grid, NumericVector x, double bw){
 
   int m = grid.size();

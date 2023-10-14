@@ -69,7 +69,30 @@ test_that("Binning method (real data)", {
   )
 })
 
+# Cpp running
+test_that("Running cpp method (singleton)", {
+  expect_equal(
+    epanechnikov_l2norm_runningC(0, 1),
+    4.5
+  )
+})
 
+test_that("Running cpp method (separate singletons)", {
+  l <- 8
+  x <- seq(4, 4*l, length.out = l)
+  expect_equal(
+    epanechnikov_l2norm_runningC(x, 1),
+    4.5 / l
+  )
+})
+
+test_that("Running cpp method (real data)", {
+  x <- rnorm(1000)
+  expect_equal(
+    epanechnikov_l2norm_matrix(x, 0.1),
+    epanechnikov_l2norm_runningC(x, 0.1)
+  )
+})
 
 
 

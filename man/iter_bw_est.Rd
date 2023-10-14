@@ -9,11 +9,12 @@ iter_bw_est(
   maxiter = 3L,
   kernel = "e",
   bw0 = NULL,
-  cv_k = 5,
-  tol = 1e-07,
-  reltol = 0.001,
-  cvtol = -Inf,
-  ...
+  cv_k = 3,
+  evaluation_method = "c",
+  l2_method = "default",
+  tol = 1e-04,
+  reltol = 0.01,
+  cvtol = -Inf
 )
 }
 \arguments{
@@ -32,9 +33,9 @@ Defaults to maximum-likelihood Gaussian density}
 
 \item{cvtol}{A scalar. Absolute tolerance for cv-score improvement}
 
-\item{...}{Additional arguments passed to estimate_l2norm.}
-
 \item{kernel_code}{One of "gaussian" or "epanechnikov".}
+
+\item{...}{Additional arguments passed to estimate_l2norm.}
 }
 \value{
 A list of bandwidths for estimation of the unknown density.
@@ -47,10 +48,14 @@ bandwidth estimates. To access density estimates, use compile_density.
 }
 \examples{
 set.seed(0)
-iter_bw_est(runif(10000), maxiter = 10, kernel_code="e", cv_k = 3)
-res <- iter_bw_est(runif(100), maxiter = 30, kernel_code="g", cv_k = 5) \%>\% as.data.frame()
-ggplot(res, aes(x = 1:nrow(res))) + geom_line(aes(y = bw))
-ggplot(res, aes(x = 1:nrow(res))) + geom_line(aes(y = cvscore))
+
+u <- runif(10000)
+profvis::profvis(iter_bw_est(u, maxiter = 10, kernel="e", cv_k = 3))
+profvis::profvis(iter_bw_est(u, maxiter = 10, kernel="e", cv_k = 0))
+
+res <- iter_bw_est(runif(100), maxiter = 30, kernel = "g", cv_k = 5)
+ggplot2::ggplot(res, ggplot2::aes(x = 1:nrow(res))) + ggplot2::geom_line(ggplot2::aes(y = bw))
+ggplot2::ggplot(res, ggplot2::aes(x = 1:nrow(res))) + ggplot2::geom_line(ggplot2::aes(y = cvscore))
 iter_bw_est(4*rbinom(1000, 1, 0.5) + rnorm(1000))
 set.seed(NULL)
 }

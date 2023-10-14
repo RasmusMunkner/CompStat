@@ -4,7 +4,7 @@
 \alias{cvscore.CompStatKernel}
 \title{Compute cross-validated out-of-sample loglikelihood for kernel smoother}
 \usage{
-\method{cvscore}{CompStatKernel}(kernel, x, bw, k = 5)
+\method{cvscore}{CompStatKernel}(kernel, x, bw, k = 5, ...)
 }
 \arguments{
 \item{x}{A numeric vector of data points}
@@ -12,6 +12,8 @@
 \item{bw}{The desired bandwidth}
 
 \item{k}{The number of folds for cross validation}
+
+\item{...}{Additional arguments passed to kernel_density.}
 
 \item{kernel_code}{The abbreviation for the kernel to use for smoothing}
 }
@@ -24,6 +26,7 @@ Compute cross-validated out-of-sample loglikelihood for kernel smoother
 \examples{
 x <- rnorm(1000)
 bw <- seq(0.01, 1, 0.01)
-scores <- bw \%>\% purrr::map_dbl(.f = density_cv_score, x = x)
+g <- CompStatKernel("g")
+scores <- bw \%>\% purrr::map_dbl(.f = cvscore, kernel = g, x = x)
 plot(bw, scores, type = "l")
 }

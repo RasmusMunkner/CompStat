@@ -17,3 +17,11 @@ A plot of the density of the rv
 \description{
 Density plot for random variables
 }
+\examples{
+X1 <- get_rv("n")
+X2 <- get_rv("g")
+X3 <- get_rv("p")
+plot(X1)
+plot(X2)
+plot(X3)
+}

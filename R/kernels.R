@@ -10,16 +10,22 @@
 #' @export
 #'
 #' @examples
-#' CompStatKernel("gaussian")
-#' CompStatKernel("g")
-#' CompStatKernel("t")
+#' set.seed(0)
+#' x <- rnorm(100000)
+#' ekern <- CompStatKernel("e")
+#' profvis::profvis(kernel_density(ekern, x, 0.1, method = "r"))
 CompStatKernel <- function(kernel_code){
 
   if("CompStatKernel" %in% class(kernel_code)){
     return(kernel_code)
+  } else {
+    kernel_code <- kernel_code %>% substr(1,1) %>% tolower()
+    valid_kernels <- c("n", "g", "e")
+    if (!(kernel_code %in% valid_kernels)){
+      stop(purrr::reduce(.x = c("Invalid kernel code. Valid codes are:", valid_kernels), .f = paste))
+    }
   }
 
-  kernel_code <- kernel_code %>% substr(1,1) %>% tolower()
   name <- switch(kernel_code,
     n= ,
     g= "Gaussian",
@@ -75,6 +81,42 @@ CompStatKernel <- function(kernel_code){
   )
 }
 
+#' Plotting function for CompStatKernel's
+#'
+#' @param kernel A CompStatKernel
+#' @param x A numeric vector with the points the kernel is evaluated in
+#'
+#' @return A ggplot showing the kernel
+#' @export
+#'
+#' @examples
+#' plot(CompStatKernel("g"))
+#' plot(CompStatKernel("e"))
+plot.CompStatKernel <- function(kernel, x = seq(-2,2,0.01)){
+  ggplot2::ggplot(NULL, mapping = ggplot2::aes(x = x, y = kernel$kernel(x))) +
+    ggplot2::geom_line() +
+    ggplot2::labs(x = "x", y = "K(x)")
+}
+
+#' Printing method for CompStatKernel's
+#'
+#' @param kernel
+#'
+#' @return Prints a tibble of information on the CompStatKernel
+#' @export
+#'
+#' @examples
+#' "g" %>% CompStatKernel()
+#' "e" %>% CompStatKernel()
+print.CompStatKernel <- function(kernel){
+  print("CompStatKernel", quote = F)
+  print(paste0("Type: ", kernel$name), quote = F)
+  print(paste0("L2: ", round(kernel$l2norm, 4)), quote = F)
+  print(paste0("Sigma2: ", round(kernel$sigma2, 4)), quote = F)
+}
+
+
+
 #' Fast implementation of the Epanechnikov kernel
 #'
 #' It is possible to make a comparable version of this function where x itself is used to store the values.
@@ -83,10 +125,6 @@ CompStatKernel <- function(kernel_code){
 #' @param x Vector for the kernel to be evaluated on
 #'
 #' @return The values of the kernel for the given input
-#' @export
-#'
-#' @examples
-#' epa_kernel(seq(-2,2,0.1))
 epa_kernel <- function(x){
   res <- numeric(length(x))
   ind <- abs(x) <= 1
@@ -94,13 +132,6 @@ epa_kernel <- function(x){
   res[ind] <- 3/4 * (1-x[ind]^2)
   res
 }
-
-gauss <- CompStatKernel("g")
-
-microbenchmark::microbenchmark(
-  gauss$kernel(u),
-  mock_dnorm(u)
-)
 
 #' Compiles kernel density estimate
 #'
@@ -114,28 +145,26 @@ microbenchmark::microbenchmark(
 #' @examples
 #' set.seed(0)
 #' x <- rnorm(1000)
-#' grid <- seq(-3,3,0.01)
-#' kern <- CompStatKernel("g")
-#' dens_hatR <- density(kern, x, 1, method = "r", grid = grid)
-#' dens_hatC <- density(kern, x, 1, method = "c", grid = grid)
-#' max(abs(dens_hatR - dens_hatC))
-#' ggplot() +
-#'   geom_histogram(aes(x = x, y = after_stat(density))) +
-#'   geom_line(aes(x = z, y = dens_hat), color = "red")
 #' set.seed(NULL)
+#' grid <- density(x, 0.2, kernel = "g")$x
 #'
 #' microbenchmark::microbenchmark(
-#' kernel_density("e", x, 0.2, method="c"),
-#' kernel_density("e", x, 0.2, method="r")
+#' kernel_density("e", x, 0.2, method="c", grid = grid),
+#' kernel_density("e", x, 0.2, method="r", grid = grid),
+#' density(x, 0.2 * sqrt(CompStatKernel("e")$sigma2), kernel="e")
 #' )
 #'
-#' u <- rnorm(100000)
-#' profvis::profvis({
-#' kernel_density("g", u, 0.2, method="r")
-#' kernel_density("e", u, 0.2, method="r")
-#' })
+#' microbenchmark::microbenchmark(
+#' kernel_density("g", x, 0.2, method="c"),
+#' kernel_density("g", x, 0.2, method="r"),
+#' density(x, 0.2, kernel="g")
+#' )
 #'
-kernel_density <- function(kernel, x, bw, grid = NULL, n = 512, from = NULL, to = NULL, cut = 3, method = "c"){
+#'
+kernel_density <- function(kernel, x, bw,
+                           grid = NULL, n = 512, from = NULL, to = NULL, cut = 3, method = "c",
+                           return_grid = F
+                           ){
 
   kernel <- CompStatKernel(kernel)
 
@@ -150,10 +179,14 @@ kernel_density <- function(kernel, x, bw, grid = NULL, n = 512, from = NULL, to 
     grid <- seq(from, to, length.out=n)
   }
 
-  if (method == "r"){
+  if (return_grid){
+    return(grid)
+  }
+
+  if (tolower(method) == "r"){
     return(eval_kdensR(kernel$kernel, grid, x, bw))
   }
-  if (method == "c"){
+  if (tolower(method) == "c"){
     if (kernel$name %in% c("Gaussian", "Epanechnikov")){
       return(eval_kdensC(kernel$name, grid, x, bw))
     } else {
@@ -165,6 +198,47 @@ kernel_density <- function(kernel, x, bw, grid = NULL, n = 512, from = NULL, to 
 
 }
 
+#' Benchmark the kernel density evaluation implementations
+#'
+#' @return A data frame containing benchmark information
+#' @export
+#'
+#' @examples
+#' bm <- benchmark_kernel_density()
+#' bm %>%
+#' bm %>%
+#'  ggplot2::ggplot(ggplot2::aes(x = log(N), y = log(Time), color = Method)) +
+#'  ggplot2::geom_line() +
+#'  ggplot2::geom_point() +
+#'  ggplot2::facet_wrap(~Kernel)
+benchmark_kernel_density <- function(N_seq = 3:12, bw = 0.2){
+
+  set.seed(0)
+  xs <- N_seq %>% purrr::map(.f = function(n){rnorm(2^n)})
+  set.seed(NULL)
+
+  bm <- N_seq %>%
+    purrr::imap_dfr(.f = function(n, i){
+      purrr::map_dfr(.x = c("gaussian", "epanechnikov"), .f = function(kernel){
+        calls <- list(
+          call("kernel_density", kernel = kernel, x = xs[[i]], bw=bw, method = "c"),
+          call("kernel_density", kernel = kernel, x = xs[[i]], bw=bw, method = "r"),
+          call("density", kernel = kernel, x = xs[[i]], bw=bw*sqrt(CompStatKernel(kernel)$sigma2))
+        )
+        names(calls) <- c("cpp", "r", "stats::density")
+        microbenchmark::microbenchmark(
+          list=calls
+        ) %>%
+          as.data.frame() %>%
+          dplyr::group_by(expr) %>%
+          dplyr::summarise(Time = median(time)) %>%
+          dplyr::mutate(Method = expr, Kernel = kernel, N = 2^n) %>%
+          dplyr::select(-c(expr))
+      })
+    })
+  bm
+}
+
 #' Implementation of kernel density evaluation in R.
 #'
 #' @param k The kernel evaluation function
@@ -173,18 +247,6 @@ kernel_density <- function(kernel, x, bw, grid = NULL, n = 512, from = NULL, to 
 #' @param bw The bandwidth
 #'
 #' @return The estimated density evaluated at the grid points
-#' @export
-#'
-#' @examples
-#'
-#' gkern <- CompStatKernel("g")
-#' grid <- rnorm(1000)
-#' x <- rnorm(1000)
-#' microbenchmark::microbenchmark(
-#' eval_kdensR(gkern$kernel, grid, x, 0.1),
-#' eval_kdensC("g", grid, x, 0.1)
-#' )
-#'
 #'
 eval_kdensR <- function(k, grid, x, bw){
   grid %>%
@@ -193,7 +255,7 @@ eval_kdensR <- function(k, grid, x, bw){
     })
 }
 
-l2norm <- function(x, ...){
+l2norm <- function(f, ...){
   UseMethod("l2norm")
 }
 
@@ -223,6 +285,7 @@ l2norm.CompStatKernel <- function(kernel, x, r, method = "default"){
     result <- switch(tolower(method),
            matrix=epanechnikov_l2norm_matrix(x, r),
            default=,
+           c=epanechnikov_l2norm_runningC(x, r),
            running=epanechnikov_l2norm_running(x, r),
            binning=epanechnikov_l2norm_binning(x, r),
            NULL
@@ -255,7 +318,8 @@ l2norm.CompStatKernel <- function(kernel, x, r, method = "default"){
 #' @examples
 #' x <- rnorm(1000)
 #' bw <- seq(0.01, 1, 0.01)
-#' scores <- bw %>% purrr::map_dbl(.f = density_cv_score, x = x)
+#' g <- CompStatKernel("g")
+#' scores <- bw %>% purrr::map_dbl(.f = cvscore, kernel = g, x = x)
 #' plot(bw, scores, type = "l")
 cvscore.CompStatKernel <- function(kernel, x, bw, k = 5, ...){
   set.seed(0)
