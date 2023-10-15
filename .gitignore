@@ -6,3 +6,4 @@
 .quarto
 inst/doc
 vignettes/rejection_sampling_cache/
+.Rd
