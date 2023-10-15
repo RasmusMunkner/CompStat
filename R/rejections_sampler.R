@@ -37,10 +37,10 @@
 #' sim <- sampler(50000)
 #' hist(sim, prob=TRUE, ylim=c(0,0.6))
 #' curve(enve$base_rv$f(x), -3, 3, col="blue", add=TRUE)
-rejection_sampler_factory <- function(enve, evalmode = 2){
+rejection_sampler <- function(enve, evalmode = 2){
   p <- min(1 - 1 / (2 + enve$alpha), 0.9) # An initial guess at the rejection probability
   credibility <- 1#20 # Arbitrary
-  rejection_sampler <- function(n, env = NULL, train = TRUE, adapt_enve = FALSE){
+  sampler <- function(n, env = NULL, train = TRUE, adapt_enve = FALSE){
 
     if (is.null(env)){
       env <- enve
@@ -98,6 +98,60 @@ rejection_sampler_factory <- function(enve, evalmode = 2){
     }
     sim
   }
+  sampler
+}
+
+#' Basic benchmark of different envelope types
+#'
+#' @param N_seq The implementations are tested for 2^n for each n in this sequence.
+#' @param rv A RandomVariable describing the target distribution
+#'
+#' @return The benchmark data
+#' @export
+#'
+#' @examples
+#' bm <- benchmark_envelopes()
+#' bm %>%
+#' ggplot2::ggplot(ggplot2::aes(x = log(N), y = log(Time), color = Method)) +
+#' ggplot2::geom_line() +
+#' ggplot2::geom_point()
+benchmark_envelopes <- function(N_seq = 4:12, rv = named_rv("epanechnikov")){
+  set.seed(0)
+  gauss_enve <- GaussianEnvelope(rv, security = 1)
+  laplace_enve <- LaplaceEnvelope(rv, security = 1)
+  loglinear_enve <- LogLinearEnvelope(rv, autoselection_msg = F, precompute = F)
+  adapted_enve <- LogLinearEnvelope(rv, autoselection_msg = F, precompute = F)
+
+  gauss_sampler <- rejection_sampler(gauss_enve, evalmode = 0)
+  laplace_sampler <- rejection_sampler(laplace_enve, evalmode = 0)
+  loglinear_sampler <- rejection_sampler(loglinear_enve, evalmode = 0)
+  adapted_sampler <- rejection_sampler(adapted_enve, evalmode = 0)
+
+  for (i in 1:50){
+    adapted_sampler(10000, train = T, adapt_enve = T)
+  }
+
+  bm <- N_seq %>%
+    purrr::imap_dfr(.f = function(N, i){
+      calls <- list(
+        call("gauss_sampler", n = 2^N),
+        call("laplace_sampler", n = 2^N),
+        call("loglinear_sampler", n = 2^N, train = F),
+        call("adapted_sampler", n = 2^N, train = F)
+      )
+      names(calls) <- c("Gaussian", "Laplace", "LogLinear", "Adapted LogLinear")
+      microbenchmark::microbenchmark(
+        list=calls
+      ) %>%
+        dplyr::group_by(expr) %>%
+        dplyr::summarise(Time = median(time)) %>%
+        dplyr::mutate(N = 2^N, Method = expr) %>%
+        dplyr::select(-c(expr))
+    })
+
+  set.seed(NULL)
+  bm
+
 }
 
 

@@ -1,0 +1,222 @@
+---
+title: "Rejection Sampling"
+author: "Rasmus V. Munkner"
+format: revealjs
+---
+
+## Problem statement
+
+- Want to sample i.i.d. observations $(X_n)_{n \in \mathbb{N}} \sim f_0$.
+
+- We only know $f_0$ up to a normalizing constant.
+
+. . .
+
+Steps:
+
+- Find an envelope $g$ such that $\alpha f_0 \leq g$.
+
+. . .
+
+- Sample observations $(Y_n)_{n \in \mathbb{N}} \sim g$.
+
+. . .
+
+- Accept/reject observations based on $U_n \leq \alpha \frac{g(Y_n)}{f_0(Y_n)} := \frac{\tilde{g}(Y_n)}{\tilde{f_0}(Y_n)}$
+
+## RandomVariable{.scrollable}
+- Distributional information is encoded in *RandomVariable*'s
+
+```{r Demonstrating RandomVariable}
+#| echo: true
+library(CompStat)
+X <- named_rv("normal")
+print(X)
+plot(X)
+Y <- named_rv("poisson prior")
+print(Y)
+plot(Y)
+```
+
+## Envelope{.scrollable}
+- Envelopes are defined on top of RandomVariable's
+
+```{r Demonstrating Envelope}
+#| echo: true
+epa_rv <- named_rv("epanechnikov")
+
+lap_enve <- LaplaceEnvelope(epa_rv)
+print(lap_enve)
+plot(lap_enve)
+
+gauss_enve <- GaussianEnvelope(epa_rv)
+print(gauss_enve)
+plot(gauss_enve)
+
+loglinear_enve <-
+  LogLinearEnvelope(epa_rv,
+                    tangent_points = c(-0.7, -0.1, 0.2, 0.4, 0.8)
+                    )
+print(loglinear_enve)
+plot(loglinear_enve)
+
+
+```
+## Sampler{.scrollable}
+
+```{r Demonstrating rejection_sampler}
+#| echo: true
+rv_epa <- named_rv("epa")
+enve <- LogLinearEnvelope(rv_epa, autoselection_msg = F)
+sampler <- rejection_sampler(enve)
+set.seed(0)
+sim <- sampler(100000)
+set.seed(NULL)
+```
+
+```{r Plotting rejection sampler results}
+x <- seq(-3,3,0.01)
+y <- ifelse(abs(x)<1, 3/4 * (1-x^2), 0)
+both <- ggplot2::ggplot() +
+  ggplot2::geom_histogram(ggplot2::aes(x = sim, ggplot2::after_stat(density)), bins = 75) +
+  ggplot2::geom_line(ggplot2::aes(x = x, y = y), color = "red") +
+  ggplot2::labs(x = "x", y = "Density") +
+  ggplot2::ggtitle("Both")
+true_dens <- ggplot2::ggplot() +
+  ggplot2::geom_line(ggplot2::aes(x = x, y = y), color = "red") +
+  ggplot2::labs(x = "x", y = "Density") +
+  ggplot2::ggtitle("True density")
+sim_hist <- ggplot2::ggplot() +
+  ggplot2::geom_histogram(ggplot2::aes(x = sim, ggplot2::after_stat(density)), bins = 75) +
+  ggplot2::labs(x = "x", y = "Density") +
+  ggplot2::ggtitle("Simulated data")
+gridExtra::grid.arrange(grobs = list(sim_hist, true_dens, both), nrow = 2, ncol = 2)
+set.seed(NULL)
+
+```
+
+## Initial Benchmark
+
+```{r Initial Benchmark for envelopes (epanechnikov)}
+#| cache: true
+bm <- benchmark_envelopes(rv = named_rv("epanechnikov"))
+bm %>%
+  ggplot2::ggplot(ggplot2::aes(x = log(N), y = log(Time), color = Method)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point()
+```
+
+## Benchmarking with the poisson prior
+
+```{r Initial Benchmark for envelopes (poisson prior)}
+#| cache: true
+suppressWarnings(
+  bm <- benchmark_envelopes(N_seq = 4:8, rv = named_rv("poisson prior"))
+)
+bm %>%
+  ggplot2::ggplot(ggplot2::aes(x = log(N), y = log(Time), color = Method)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point()
+```
+
+## Profiling the fast implementations{.scrollable}
+
+- Provis does not catch it, but the slow operation is exponentiation.
+
+```{r Profiling Samplers}
+#| cache: true
+#| echo: true
+
+set.seed(0)
+
+suppressWarnings(
+  gauss_sampler <- named_rv("poisson") %>% GaussianEnvelope() %>% rejection_sampler()
+)
+adapted_sampler <- named_rv("poisson") %>%
+  LogLinearEnvelope(autoselection_msg = F) %>%
+  rejection_sampler(evalmode = 1)
+
+for (i in 1:50){
+  adapted_sampler(10000, train = T, adapt_enve = T)
+}
+
+profvis::profvis(
+  adapted_sampler(300000),
+  simplify = F
+)
+
+profvis::profvis(
+  gauss_sampler(300000),
+  simplify = F
+)
+
+set.seed(NULL)
+
+```
+
+## Revisiting the poisson prior{.smaller}
+The target log-density is
+$$
+\log(f_0(y)) = \sum_{i=1}^n yz_ix_i - e^{yx_i} = y\left(\sum_{i=1}^{100} z_ix_i\right) - \sum_{i=1}^{100} e^{yx_i} 
+$$
+
+. . .
+
+- Due to the second term, exponentiation has to be performed 100 times.
+
+- We suggest an approximation based on a Taylor-expansion.
+
+## Taylor expansion{.smaller}
+We have
+$$
+\sum_{i=1}^{100}e^{yx_i} =
+e^{\bar{x}y}\sum_{i=1}^{100}e^{y(x_i-\bar{x})} \approx
+e^{y\bar{x}}\sum_{i=1}^{100}\left( 1 + y(x_i-\bar{x}) + \frac{1}{2}y^2(x_i-\bar{x})^2 + \cdots + \frac{1}{n!}y^n(x_i-\bar{x})^n\right)
+$$
+
+. . .
+
+Interchanging the sums we obtain
+$$
+e^{y\bar{x}}\left(100 + y\sum_{i=1}^{100}(x_i-\bar{x}) + \cdots + \frac{y^n}{n!}\sum_{i=1}^{100}(x_i - \bar{x})^n)\right)
+$$
+
+. . .
+
+With $a_k = \frac{1}{k!}\sum_{i=1}^{100} (x_i - \bar{x})^k$, we find that
+$$
+\log(f_0(y)) \approx e^{y\bar{x}}p_n(y) = e^{y\bar{x}}(a_n y^n + \cdots + a_0)
+$$
+
+## Improving the Taylor expansion{.smaller}
+The error when approximating with an order $n$ polynomial is $o((y(x_i-\bar{x}))^n)$.
+
+. . .
+
+A possible improvement to accuracy could be achieved by introducing
+$$
+I_{k} = \{i \in \mathbb{N} \mid x_i \in [k-1,k)\} \quad , \quad \bar{x}_k = \frac{1}{|I_k|}\sum_{i \in I_k}x_i
+$$
+
+. . .
+
+And utilizing that
+$$
+\sum_{i=1}^{100} e^{yx_i} = \sum_{k = 1}^{K}\sum_{i \in I_k} e^{yx_i} \approx \sum_{k = 1}^K e^{y\bar{x}_k}p_k(y)
+$$
+Where
+$$
+p_k(y) = \sum_{h=0}^{n_k} a_{k,h} y^h \quad , \quad a_{k,h} = \frac{1}{h!}\sum_{i \in I_k}(x_i - \bar{x}_k)^h
+$$
+
+## Vectorized implementation
+We consider $y = (y_1, \ldots, y_m)$ and the Vandermonde matrix
+$$
+VM_n(y) = \begin{pmatrix}1 & \cdots & 1 \\ \vdots & \ddots & \vdots \\ y_1^n & \cdots & y_m^n \end{pmatrix}
+$$
+
+We have that
+$$
+(p_k(y_j))_{k,j} = \left(\sum_{h=0}^{n_k}a_{k,h}y_j^h\right)_{k,j} = 
+$$
+
