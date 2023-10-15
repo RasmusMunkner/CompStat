@@ -7,3 +7,6 @@
 inst/doc
 vignettes/rejection_sampling_cache/
 man/
+**cache/
+**.html
+**_files/
