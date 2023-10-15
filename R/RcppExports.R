@@ -9,3 +9,7 @@ eval_kdensC <- function(kcode, grid, x, bw) {
     .Call(`_CompStat_eval_kdensC`, kcode, grid, x, bw)
 }
 
+vandermondeC <- function(y, n) {
+    .Call(`_CompStat_vandermondeC`, y, n)
+}
+

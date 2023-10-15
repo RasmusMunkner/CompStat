@@ -178,14 +178,14 @@ $$
 
 Interchanging the sums we obtain
 $$
-e^{y\bar{x}}\left(100 + y\sum_{i=1}^{100}(x_i-\bar{x}) + \cdots + \frac{y^n}{n!}\sum_{i=1}^{100}(x_i - \bar{x})^n)\right)
+e^{y\bar{x}}\left(100 + y\sum_{i=1}^{100}(x_i-\bar{x}) + \cdots + \frac{y^n}{n!}\sum_{i=1}^{100}(x_i - \bar{x})^n)\right) = e^{y\bar{x}}(a_0 + a_1y + \cdots + a_ny^n) = e^{y\bar{x}}p(y)
 $$
 
 . . .
 
-With $a_k = \frac{1}{k!}\sum_{i=1}^{100} (x_i - \bar{x})^k$, we find that
+With $a_k = \frac{1}{k!}\sum_{i=1}^{100} (x_i - \bar{x})^k$, thus
 $$
-\log(f_0(y)) \approx e^{y\bar{x}}p_n(y) = e^{y\bar{x}}(a_n y^n + \cdots + a_0)
+\log(f_0(y)) \approx e^{y\bar{x}}p_n(y)
 $$
 
 ## Improving the Taylor expansion{.smaller}
@@ -209,14 +209,145 @@ $$
 p_k(y) = \sum_{h=0}^{n_k} a_{k,h} y^h \quad , \quad a_{k,h} = \frac{1}{h!}\sum_{i \in I_k}(x_i - \bar{x}_k)^h
 $$
 
-## Vectorized implementation
-We consider $y = (y_1, \ldots, y_m)$ and the Vandermonde matrix
-$$
-VM_n(y) = \begin{pmatrix}1 & \cdots & 1 \\ \vdots & \ddots & \vdots \\ y_1^n & \cdots & y_m^n \end{pmatrix}
-$$
+## Taylor expansion implementation{.smaller}
 
-We have that
-$$
-(p_k(y_j))_{k,j} = \left(\sum_{h=0}^{n_k}a_{k,h}y_j^h\right)_{k,j} = 
-$$
+```r{code-line-numbers="1-3|5-12|13-33"}
+vandermonde <- function(y, n){
+  outer(y, 0:n, `^`) %>% t()
+}
+
+polycoef <- function(n, x = poisson$x){
+  x_centralized <- x - mean(x)
+  0:n %>%
+    purrr::map_dbl(.f=function(n){
+      sum(x_centralized^n)
+    }) / factorial(0:n)
+}
+
+poisson_prior_approximation <- function(x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), orders = 4){
+  xz <- sum(x*z)
+  groups <- cut(x, breaks, labels = F)
+  x_means <- 1:max(groups) %>%
+    purrr::map_dbl(.f = function(k){
+      mean(x[groups == k])
+    })
+  coef <- list(k = 1:max(groups), n = orders) %>%
+    purrr::pmap(.f = function(k, n){
+      polycoef(n, x[groups == k])
+    }) %>%
+    purrr::reduce(.f = rbind)
+  approximation <- function(y){
+    VMy <- vandermonde(y, max(orders))
+    p <- coef %*% VMy
+    expmean <- exp(outer(x_means, y))
+    y*xz - colSums(p * expmean)
+  }
+  approximation
+}
+```
+
+## Benchmarking the Taylor expansion
+
+```{r Approximate Poisson Prior Benchmark}
+#| cache: true
+bm <- benchmark_poisson_prior_densities()
+bm %>%
+  ggplot2::ggplot(ggplot2::aes(x = log(N), y = log(Time), color = Method)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point()
+```
+
+## Are we simulating from the correct distribution?{.scrollable .smaller}
+
+```{r Check that the Taylor expansion is a sufficient approximation}
+#| cache: true
+#| echo: true
+
+set.seed(0)
+
+ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), order = 4)
+ppa_inaccurate <- poisson_prior_approximation(breaks = c(0, 4), order = 4)
+
+loworder_sampler <- RandomVariable(log_f = ppa_loworder, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
+  LogLinearEnvelope() %>% 
+  rejection_sampler()
+
+inaccurate_sampler <- RandomVariable(log_f = ppa_inaccurate, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
+  LogLinearEnvelope() %>% 
+  rejection_sampler()
+
+exact_sampler <- RandomVariable(log_f = poisson_prior_log_f, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
+  LogLinearEnvelope() %>% 
+  rejection_sampler()
+
+for (i in 1:25){
+  loworder_sampler(5000, train = T, adapt_enve = T)
+  inaccurate_sampler(5000, train = T, adapt_enve = T)
+  exact_sampler(5000, train = T, adapt_enve = T)
+}
+
+N <- 1e6
+loworder_sim <- loworder_sampler(N)
+inaccurate_sim <- inaccurate_sampler(N)
+exact_sim <- exact_sampler(N)
+exact_sim_2 <- exact_sampler(N)
+
+loworder_dens <- density(loworder_sim)
+inaccurate_dens <- density(inaccurate_sim)
+exact_dens <- density(exact_sim)
+
+ks.test(inaccurate_sim, exact_sim)
+ks.test(loworder_sim, exact_sim)
+ks.test(exact_sim_2, exact_sim)
+
+set.seed(NULL)
+
+```
+
+## Visual checks
+
+```{r Plotting results}
+
+make_densdata <- function(dens_obj, label){
+  tibble::tibble(
+    x = dens_obj$x,
+    y = dens_obj$y,
+    Sampler = label
+  )
+}
+
+data <- list(dens_obj = list(loworder_dens, inaccurate_dens, exact_dens),
+             label = list("Grouping, n = 4", "No Grouping, n = 4", "Exact")) %>% 
+  purrr::pmap_dfr(.f = make_densdata)
+
+ggplot2::ggplot(data) +
+  ggplot2::geom_line(ggplot2::aes(x = x, y=y, color = Sampler)) +
+  ggplot2::labs(x = "x", y = "Density")
+```
+
+## Profiling the final implementation
+
+```{r Profiling the final implementation}
+#| cache: true
+
+set.seed(0)
+ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), order = 4)
+loworder_sampler <- RandomVariable(log_f = ppa_loworder, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
+  LogLinearEnvelope() %>% 
+  rejection_sampler()
+
+for (i in 1:25){
+  loworder_sampler(5000, train = T, adapt_enve = T)
+}
+
+profvis::profvis(loworder_sampler(1e6, train = F), simplify = F)
+set.seed(NULL)
+
+```
+
+
+
+
+
+
 

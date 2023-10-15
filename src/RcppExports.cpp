@@ -36,10 +36,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// vandermondeC
+NumericMatrix vandermondeC(NumericVector y, int n);
+RcppExport SEXP _CompStat_vandermondeC(SEXP ySEXP, SEXP nSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    rcpp_result_gen = Rcpp::wrap(vandermondeC(y, n));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_CompStat_epanechnikov_l2norm_runningC", (DL_FUNC) &_CompStat_epanechnikov_l2norm_runningC, 2},
     {"_CompStat_eval_kdensC", (DL_FUNC) &_CompStat_eval_kdensC, 4},
+    {"_CompStat_vandermondeC", (DL_FUNC) &_CompStat_vandermondeC, 2},
     {NULL, NULL, 0}
 };
 
