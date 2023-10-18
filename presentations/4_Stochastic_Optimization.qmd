@@ -53,6 +53,18 @@ $$
 -\frac{1}{N}\sum_{i=1}^N \left(\frac{\eta_i}{1 + \eta_i} + y_i\frac{1-\eta_i}{1+\eta_i}\right)\varphi(x_i) + 2\lambda \Omega \beta
 $$
 
+## On the calculation of $\Omega$ {.smaller}
+To calculate the penalty matrix, we should evaluate
+$$
+\Omega_{ij} = \int_{-\infty}^{\infty} \varphi_i''(x)\varphi_j''(x)dx = \sum_{m = 1}^{n} \int_{k_{m-1}}^{k_m} \varphi_i''(x)\varphi_j''(x) dx := \sum_{m = 1}^{n} \int_{k_{m-1}}^{k_m} g_{ij}(x) dx
+$$
+Where we used that we don't care to penalize outside the boundry knots $k_0$ and $k_m$. This could for example be achieved by using natural splines.
+
+Note that for $\varphi_i$ a 3-degree spline, $\varphi_i$ is linear between any two knots $k_{m-1}$, $k_{m}$ and thus $g_{ij}$ is a quadratic on this interval. Hence the Simpson-integration rule
+$$
+\int_a^b g_{ij}(x)dx = \frac{b-a}{6}\left(g_{ij}(a) + 4g_{ij}\left(\frac{a+b}{2}\right) + g_{ij}(b)\right)
+$$
+is an exact equality.
 
 
 
