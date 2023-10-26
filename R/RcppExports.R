@@ -9,6 +9,10 @@ eval_kdensC <- function(kcode, grid, x, bw) {
     .Call(`_CompStat_eval_kdensC`, kcode, grid, x, bw)
 }
 
+#' @importFrom Rcpp evalCpp
+#' @useDynLib CompStat
+NULL
+
 vmC <- function(y, n) {
     .Call(`_CompStat_vmC`, y, n)
 }

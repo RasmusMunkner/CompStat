@@ -3,6 +3,10 @@
 using namespace Rcpp;
 using namespace std;
 
+//' @importFrom Rcpp evalCpp
+//' @useDynLib CompStat
+
+
 // [[Rcpp::export]]
 NumericMatrix vmC(NumericVector y, int n){
   NumericMatrix VMy(n + 1, y.size());

@@ -480,7 +480,7 @@ NumericMatrix vmC2(NumericVector y, int n){
 
 ```{r Benchmarking Vandermonde Implementations}
 #| cache: false
-#| echo: true
+#| echo: false
 set.seed(0)
 y <- runif(10000)
 set.seed(NULL)
