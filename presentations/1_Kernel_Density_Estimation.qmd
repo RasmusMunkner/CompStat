@@ -35,9 +35,7 @@ plot(gkern)
 
 
 
-## Computing $\hat{f}$
-- R implementation
-
+## Computing $\hat{f}$ in R
 ```r
 eval_kdensR <- function(k, grid, x, bw){
   grid %>%
@@ -59,9 +57,7 @@ epa_kernel <- function(x){
 gauss_kernel <- function(x) dnorm(x)
 ```
 
-## Computing $\hat{f}$
-- Cpp implementation
-
+## Computing $\hat{f}$ in C++{.smaller}
 ```cpp
 NumericVector eval_kdensC(
   String kcode,

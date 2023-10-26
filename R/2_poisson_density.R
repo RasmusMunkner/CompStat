@@ -12,8 +12,12 @@ x_poisson_mean <- mean(poisson$x)
 #'
 #' @examples
 #' vandermonde(c(1,2,3), 4)
-vandermonde <- function(y, n){
-  outer(y, 0:n, `^`) %>% t()
+vandermonde <- function(y, n, mode = "r"){
+  switch(mode,
+         "c" = vmC(y,n),
+         "c2" = vmC2(y,n),
+         "r" = outer(y, 0:n, `^`) %>% t()
+         )
 }
 
 #' Calculates coefficients for the Taylor polynomial arising from the poisson
@@ -51,7 +55,9 @@ polycoef <- function(n, x = poisson$x){
 #' p1 <- poisson_prior_approximation()
 #' p1(c(0.2, 0.5, 0.8))
 #'
-poisson_prior_approximation <- function(x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), K = 4){
+poisson_prior_approximation <- function(
+    x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), K = 4,
+    vm_method = "r"){
   xz <- sum(x*z)
   groups <- cut(x, breaks, labels = F)
   x_means <- 1:max(groups) %>%
@@ -64,7 +70,7 @@ poisson_prior_approximation <- function(x = poisson$x, z = poisson$z, breaks = c
     }) %>%
     purrr::reduce(.f = rbind)
   approximation <- function(y){
-    VMy <- vandermonde(y, K)
+    VMy <- vandermonde(y, K, vm_method)
     p <- coef %*% VMy
     expmean <- exp(outer(x_means, y))
     y*xz - colSums(p * expmean)

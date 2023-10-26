@@ -140,8 +140,6 @@ bm %>%
 
 ## Profiling the fast implementations{.smaller .scrollable}
 
-- Profiles on the next slide due to error in presentation render
-
 ```{r Profiling Samplers, eval = F}
 #| cache: true
 #| echo: true
@@ -254,15 +252,19 @@ polycoef <- function(n, x = poisson$x){
 ```
 
 ```r
-vandermonde <- function(y, n){
-  outer(y, 0:n, `^`) %>% t()
+vandermonde <- function(y, n, mode = "r"){
+  switch(mode,
+         "c" = vmC(y,n),
+         "c2" = vmC2(y,n),
+         "r" = outer(y, 0:n, `^`) %>% t()
+         )
 }
-
 ```
 
-```r{code-line-numbers="14-19"}
+```r{code-line-numbers="15-20"}
 poisson_prior_approximation <- function(
-x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), K = 4){
+    x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), K = 4,
+    vm_method = "r"){
   xz <- sum(x*z)
   groups <- cut(x, breaks, labels = F)
   x_means <- 1:max(groups) %>%
@@ -275,7 +277,7 @@ x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), K = 4){
     }) %>%
     purrr::reduce(.f = rbind)
   approximation <- function(y){
-    VMy <- vandermonde(y, K)
+    VMy <- vandermonde(y, K, vm_method)
     p <- coef %*% VMy
     expmean <- exp(outer(x_means, y))
     y*xz - colSums(p * expmean)
@@ -322,8 +324,8 @@ bm %>%
 
 set.seed(0)
 
-ppa_precise <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), order = 4)
-ppa_imprecise <- poisson_prior_approximation(breaks = c(0, 4), order = 4)
+ppa_precise <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), K = 4)
+ppa_imprecise <- poisson_prior_approximation(breaks = c(0, 4), K = 4)
 
 sampler_ppa_precise <- RandomVariable(log_f = ppa_precise, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
   LogLinearEnvelope() %>% 
@@ -395,23 +397,135 @@ ggplot2::ggplot(data) +
 
 ## Profiling the final implementation
 
-```{r Profiling the final implementation}
+```{r Profiling the final implementation, eval = F}
 #| cache: true
-
+#| echo: true
 set.seed(0)
-ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), order = 4)
+ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), K = 4)
 loworder_sampler <- RandomVariable(log_f = ppa_loworder, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
   LogLinearEnvelope() %>% 
   rejection_sampler()
+suppressWarnings(
+  gauss_sampler <- RandomVariable(log_f = ppa_loworder, log_f_prime = poisson_prior_log_f_prime, support = c(0,1))
+  %>%
+    GaussianEnvelope() %>% 
+    rejection_sampler()
+)
+
 
 for (i in 1:25){
   loworder_sampler(5000, train = T, adapt_enve = T)
 }
 
-profvis::profvis(loworder_sampler(1e6, train = F), simplify = F)
+profvis::profvis(loworder_sampler(1e7, train = F), simplify = F)
+
+profvis::profvis(gauss_sampler(1e7, train = F), simplify = F)
+
 set.seed(NULL)
 
 ```
+## Profiling the approximate implementation
+
+![Profvis for adaptive envelope](2_poorly_rendered_profile_adapt_optim.png)
+
+![Profvis for gaussian envelope](2_poorly_rendered_profile_gauss_optim.png)
+
+- Exponentiation is still expensive, but a lot of time is also spent computing the Vandermonde matrix
+
+## Implementing the Vandermonde matrix in C++{.smaller}
+
+:::: {.columns}
+
+::: {.column width="50%"}
+```cpp
+NumericMatrix vmC(NumericVector y, int n){
+  NumericMatrix VMy(n + 1, y.size());
+
+  for (int r = 0; r <= n; ++r){
+    for (int c = 0; c < y.size(); ++c){
+      VMy(r,c) = pow(y[c], r);
+    }
+  }
+
+  return(VMy);
+
+}
+```
+:::
+
+::: {.column width="50%"}
+```cpp
+NumericMatrix vmC2(NumericVector y, int n){
+  NumericMatrix VMy(n + 1, y.size());
+
+  for (int c = 0; c < y.size(); ++c){
+    VMy(0,c) = 1;
+  }
+
+  for (int c = 0; c < y.size(); ++c){
+    for (int r = 1; r <= n; ++r){
+      VMy(r,c) = VMy(r-1,c) * y[c];
+    }
+  }
+
+  return(VMy);
+
+}
+```
+:::
+
+::::
+
+## Benchmarking the Vandermonde implementations
+
+```{r Benchmarking Vandermonde Implementations}
+#| cache: false
+#| echo: true
+set.seed(0)
+y <- runif(10000)
+set.seed(NULL)
+microbenchmark::microbenchmark(
+  vandermonde(y, 8, "r"),
+  vandermonde(y, 8, "c"),
+  vandermonde(y, 8, "c2"),
+  check = "equal"
+) %>% 
+  ggplot2::autoplot()
+```
+
+## Benchmarking the rejection sampler
+
+```{r Benchmarking rejection sampler after rcpp vandermonde}
+#| cache: true
+set.seed(0)
+ppa_loworder_vmC2 <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), K = 4, vm_method = "c2")
+suppressWarnings(
+  gauss_sampler_vmC2 <- RandomVariable(log_f = ppa_loworder_vmC2, log_f_prime = poisson_prior_log_f_prime, support = c(0,1))
+  %>%
+    GaussianEnvelope() %>% 
+    rejection_sampler()
+)
+
+ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), K = 4, vm_method = "r")
+suppressWarnings(
+  gauss_sampler <- RandomVariable(log_f = ppa_loworder, log_f_prime = poisson_prior_log_f_prime, support = c(0,1))
+  %>%
+    GaussianEnvelope() %>% 
+    rejection_sampler()
+)
+
+mb <- microbenchmark::microbenchmark(
+  gauss_sampler(1e5),
+  gauss_sampler_vmC2(1e5)
+)
+
+print(mb)
+ggplot2::autoplot(mb)
+
+set.seed(NULL)
+```
+
+
 
 
 
