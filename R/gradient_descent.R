@@ -5,21 +5,22 @@
 #' @param optimizable A CompStatOptimizable
 #' @param init_param Initial parameters for optimization.
 #' @param lr Learning rate schedule
-#' @param stop_crit A CompStatStoppingCriterion. Alternativly a number of epochs.
+#' @param stop_crit A CompStatStoppingCriterion. Alternatively a number of epochs.
 #'
 #' @return
 #' @export
 #'
 #' @examples
 #' parabola_optim <- optimizable_parabola(c(0,1,-2))
-#' GD(parabola_optim)
-GD <- function(
+#' SGD(parabola_optim, lrate = 0.33)
+SGD <- function(
     optimizable,
     init_param = NULL,
-    lr = 1e-3,
-    stop_crit = 50
+    lrate = 1e-3,
+    stop_crit = 50,
+    shuffle = T,
+    batch_size = 1
     ){
-  browser()
 
   # Ensure stopping criterion is valid
   if (!(class(stop_crit) %in% c("CompStatStoppingCriterion"))){
@@ -27,12 +28,14 @@ GD <- function(
   }
 
   # Ensure the learning rate is callable
-  if (!(class(lr) %in% c("CompStatDecaySchedule"))){
-    lr <- constant_schedule(lr)
+  if (!(class(lrate) %in% c("CompStatDecaySchedule"))){
+    lr <- constant_schedule(lrate)
+  } else {
+    lr <- lrate
   }
 
   # Initialize parameters
-  param <- vector(mode = "list", length = attr(stop_crit, "maxiter") + 1)
+  param <- vector(mode = "list", length = (stop_crit$maxiter + 1) * ceiling(optimizable$n_index / batch_size))
   if (!is.null(init_param)){
     param[[1]] <- init_param
   } else {
@@ -40,39 +43,29 @@ GD <- function(
   }
 
   for (epoch in 2:length(param)){
-    param[epoch] <- param[[epoch-1]] - lr$lr(epoch) * optimizable$grad(param[[epoch-1]])
-    if (stop_crit(epoch, param = param[[epoch-1]], old_param = param[[epoch]])){
-      return(param[1:epoch])
+
+    # Reshuffle observations
+    if (shuffle){
+      index_permutation <- sample(optimizable$n_index, optimizable$n_index, replace = F)
+    } else {
+      index_permutation <- 1:optimizable$n_index
     }
+
+    # Apply minibatch gradient updates
+    for (b in 1:ceiling(optimizable$n_index / batch_size)){
+      param[[epoch]] <- param[[epoch-1]] - lr$lr(epoch) *
+        optimizable$grad(
+          param[[epoch-1]],
+          index_permutation[1+(b-1)*batch_size, min(1+b*batch_size, optimizable$n_index)]
+          )
+      if (stop_crit$check(epoch, param = param[[epoch-1]], param_old = param[[epoch]])){
+        return(param[1:epoch] %>% parameter_trace())
+      }
+    }
+
   }
 
-  return(param)
-
-}
-
-#' Test case for optimization algorithms
-#'
-#' @param minima A series of target parameter values
-#'
-#' @return A CompStatOptimizable where the minima are the optimal solution
-#' @export
-#'
-#' @examples
-#' parabola_optim <- optimizable_parabola(c(0,1,-2))
-optimizable_parabola <- function(minima){
-  f <- function(coef){
-    sum((coef - minima)^2)
-  }
-  grad <- function(coef){
-    sum(2*coef)
-  }
-  structure(list(
-    objective = f,
-    grad = grad,
-    n_param = length(minima)
-  ),
-  class = "CompStatOptimizable"
-  )
+  return(param %>% parameter_trace())
 }
 
 

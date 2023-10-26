@@ -67,14 +67,26 @@ stopping_criterion <- function(tol_obj = NULL,
     return(FALSE)
   }
 
-  attr(stopper, "maxiter") <- maxiter
-
-  structure(
-    stopper,
+  structure(list(
+    check = stopper,
+    maxiter = maxiter
+    ),
     class = "CompStatStoppingCriterion"
   )
 }
 
+#' Polynomial learning rate schedule
+#'
+#' @param lr_start The initial learning rate
+#' @param lr_later The learning rate after K epochs
+#' @param K A number of epochs
+#' @param p The power of the decay
+#'
+#' @return An object of class CompStatDecaySchedule.
+#' @export
+#'
+#' @examples
+#' poly_decay <- polynomial_schedule(1, 0.01)
 polynomial_schedule <- function(lr_start, lr_later, K = 100, p = 1){
   lr_schedule <- function(epoch){
     lr_start / (1 + epoch^p / K)
@@ -86,6 +98,15 @@ polynomial_schedule <- function(lr_start, lr_later, K = 100, p = 1){
   )
 }
 
+#' Constant learning rate schedule
+#'
+#' @param lr A constant used as a learning rate
+#'
+#' @return An object of type CompStatDecaySchedule
+#' @export
+#'
+#' @examples
+#' const_decay <- constant_schedule(1)
 constant_schedule <- function(lr){
   lr_schedule <- function(epoch) lr
   structure(list(
@@ -93,6 +114,94 @@ constant_schedule <- function(lr){
   ),
   class = "CompStatDecaySchedule"
   )
+}
+
+#' S3 object interface for tracing parameter optimization
+#'
+#' @param trace A list of parameter values obtained during the fitting procedure
+#'
+#' @return An object of type CompStatParameterTrace
+#' @export
+#'
+#' @examples
+#' parabola_optim <- optimizable_parabola(c(0,1,-2))
+#' trace <- GD(parabola_optim, lrate = 0.33)
+parameter_trace <- function(trace){
+  structure(list(
+    trace = trace,
+    final = trace[[length(trace)]]
+  ),
+  class = "CompStatParameterTrace"
+  )
+}
+
+#' Plotting method for CompStatParameterTrace
+#'
+#' @param x An object of class 'CompStatParameterTrace'
+#' @param ... Additional arguments passed to ggplot
+#'
+#' @return A ggplot of the parameter traces
+#' @export
+plot.CompStatParameterTrace <- function(x, ...){
+  x$trace %>%
+    purrr::reduce(.f = rbind) %>%
+    as.data.frame() %>%
+    dplyr::mutate(Epoch = dplyr::row_number()) %>%
+    tidyr::pivot_longer(cols = -Epoch, names_to = "Parameter", values_to = "Value") %>%
+    ggplot2::ggplot(ggplot2::aes(x = Epoch, y = Value, color = Parameter), ...) +
+    ggplot2::geom_line()
+}
+
+#' Print method for CompStatParameterTrace
+#'
+#' @param x A CompStatParameter Trace
+#' @param ... Additional arguments passed to print.default
+#'
+#' @return Prints a summary of the parameter trace
+#' @export
+#'
+#' @examples
+print.CompStatParameterTrace <- function(x, ...){
+  print("---CompStatParameterTrace---", quote=F)
+  print("Final Parameters:", quote=F)
+  print(x$final, ...)
+}
+
+#' Generic wrapper around CompStatOptimizable creation
+#'
+#' @param objective The objective function to be minimized
+#' @param grad The gradient of the objective function
+#' @param n_param The dimensionality of the parameter input for the objective
+#'
+#' @return A 'CompStatOptimizable' object
+#' @export
+CompStatOptimizable <- function(objective, grad, n_param, n_index){
+  structure(list(
+    objective = objective,
+    grad = grad,
+    n_param = n_param,
+    n_index = n_index
+  ), class = "CompStatOptimizable")
+}
+
+#' Test case for optimization algorithms
+#'
+#' @param minima A series of target parameter values
+#'
+#' @return A CompStatOptimizable where the minima are the optimal solution
+#' @export
+#'
+#' @examples
+#' parabola_optim <- optimizable_parabola(c(0,1,-2))
+optimizable_parabola <- function(minima){
+  f <- function(param, index = NULL){
+    sum((param - minima)^2)
+  }
+  grad <- function(param, index = NULL){
+    2 * (param - minima)
+  }
+  n_param <- length(minima)
+  CompStatOptimizable(f, grad, n_param, n_index = 1)
 }
 
 
