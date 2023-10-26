@@ -12,14 +12,16 @@
 #'
 #' @examples
 #' parabola_optim <- optimizable_parabola(c(0,1,-2))
-#' SGD(parabola_optim, lrate = 0.33)
+#' SGD(parabola_optim, lrate = 0.33) %>% plot()
 SGD <- function(
     optimizable,
+    optimizer = "vanilla",
     init_param = NULL,
-    lrate = 1e-3,
+    lr = 1e-3,
     stop_crit = 50,
     shuffle = T,
-    batch_size = 1
+    batch_size = 1,
+    ...
     ){
 
   # Ensure stopping criterion is valid
@@ -27,11 +29,15 @@ SGD <- function(
     stop_crit <- stopping_criterion(maxiter = stop_crit)
   }
 
-  # Ensure the learning rate is callable
-  if (!(class(lrate) %in% c("CompStatDecaySchedule"))){
-    lr <- constant_schedule(lrate)
+  # Determine optimizer
+  if (!(class(optimizer) %in% c("CompStatOptimizer"))){
+    opt <-
+      switch(optimizer,
+           "vanilla"= Vanilla_Optimizer(lr),
+           "adam" = Adam_Optimizer(lr, ...)
+           )
   } else {
-    lr <- lrate
+    opt <- optimizer
   }
 
   # Initialize parameters
@@ -53,14 +59,20 @@ SGD <- function(
 
     # Apply minibatch gradient updates
     for (b in 1:ceiling(optimizable$n_index / batch_size)){
-      param[[epoch]] <- param[[epoch-1]] - lr$lr(epoch) *
-        optimizable$grad(
-          param[[epoch-1]],
-          index_permutation[1+(b-1)*batch_size, min(1+b*batch_size, optimizable$n_index)]
-          )
+
+      grad <- optimizable$grad(
+        param[[epoch-1]],
+        index_permutation[1+(b-1)*batch_size, min(1+b*batch_size, optimizable$n_index)]
+      )
+
+      update <- opt$lr(epoch) * opt$update_param(grad)
+
+      param[[epoch]] <- param[[epoch-1]] - update
+
       if (stop_crit$check(epoch, param = param[[epoch-1]], param_old = param[[epoch]])){
         return(param[1:epoch] %>% parameter_trace())
       }
+
     }
 
   }

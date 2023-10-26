@@ -51,20 +51,20 @@ polycoef <- function(n, x = poisson$x){
 #' p1 <- poisson_prior_approximation()
 #' p1(c(0.2, 0.5, 0.8))
 #'
-poisson_prior_approximation <- function(x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), orders = 4){
+poisson_prior_approximation <- function(x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), K = 4){
   xz <- sum(x*z)
   groups <- cut(x, breaks, labels = F)
   x_means <- 1:max(groups) %>%
     purrr::map_dbl(.f = function(k){
       mean(x[groups == k])
     })
-  coef <- list(k = 1:max(groups), n = orders) %>%
+  coef <- list(k = 1:max(groups), n = K) %>%
     purrr::pmap(.f = function(k, n){
       polycoef(n, x[groups == k])
     }) %>%
     purrr::reduce(.f = rbind)
   approximation <- function(y){
-    VMy <- vandermonde(y, max(orders))
+    VMy <- vandermonde(y, K)
     p <- coef %*% VMy
     expmean <- exp(outer(x_means, y))
     y*xz - colSums(p * expmean)

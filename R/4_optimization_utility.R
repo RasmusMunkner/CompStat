@@ -149,7 +149,8 @@ plot.CompStatParameterTrace <- function(x, ...){
     dplyr::mutate(Epoch = dplyr::row_number()) %>%
     tidyr::pivot_longer(cols = -Epoch, names_to = "Parameter", values_to = "Value") %>%
     ggplot2::ggplot(ggplot2::aes(x = Epoch, y = Value, color = Parameter), ...) +
-    ggplot2::geom_line()
+    ggplot2::geom_line() +
+    ggplot2::theme(legend.position = "none")
 }
 
 #' Print method for CompStatParameterTrace
@@ -173,6 +174,10 @@ print.CompStatParameterTrace <- function(x, ...){
 #' @param grad The gradient of the objective function
 #' @param n_param The dimensionality of the parameter input for the objective
 #'
+#' The objective function and gradient functions should take two arguments,
+#' - A numeric vector of parameters of length n_param
+#' - A numeric vector of indicies of any length
+#'
 #' @return A 'CompStatOptimizable' object
 #' @export
 CompStatOptimizable <- function(objective, grad, n_param, n_index){
@@ -181,7 +186,8 @@ CompStatOptimizable <- function(objective, grad, n_param, n_index){
     grad = grad,
     n_param = n_param,
     n_index = n_index
-  ), class = "CompStatOptimizable")
+  ),
+  class = "CompStatOptimizable")
 }
 
 #' Test case for optimization algorithms

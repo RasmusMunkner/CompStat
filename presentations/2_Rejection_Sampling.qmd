@@ -2,6 +2,7 @@
 title: "Rejection Sampling"
 author: "Rasmus V. Munkner"
 format: revealjs
+slide-number: c/t
 ---
 
 ## Problem statement
@@ -22,47 +23,65 @@ Steps:
 
 . . .
 
-- Accept/reject observations based on $U_n \leq \alpha \frac{g(Y_n)}{f_0(Y_n)} := \frac{\tilde{g}(Y_n)}{\tilde{f_0}(Y_n)}$
+- Accept/reject observations based on $U_n \leq \alpha \frac{g(Y_n)}{f_0(Y_n)} := \frac{\tilde{g}(Y_n)}{\tilde{f}(Y_n)}$
 
-## RandomVariable{.scrollable}
-- Distributional information is encoded in *RandomVariable*'s
+## RandomVariable
 
-```{r Demonstrating RandomVariable}
+```{r Demonstrating RandomVariable Gaussian}
 #| echo: true
 library(CompStat)
 X <- named_rv("normal")
 print(X)
 plot(X)
+```
+
+## RandomVariable
+
+```{r Demonstrating RandomVariable Poisson Prior}
+#| echo: true
 Y <- named_rv("poisson prior")
 print(Y)
 plot(Y)
 ```
 
-## Envelope{.scrollable}
-- Envelopes are defined on top of RandomVariable's
+## Envelope
 
-```{r Demonstrating Envelope}
+```{r Demonstrating Envelope Laplace}
 #| echo: true
 epa_rv <- named_rv("epanechnikov")
-
 lap_enve <- LaplaceEnvelope(epa_rv)
 print(lap_enve)
 plot(lap_enve)
+```
 
+## Envelope
+
+```{r Demonstrating Envelope Gaussian}
+#| echo: true
+
+epa_rv <- named_rv("epanechnikov")
 gauss_enve <- GaussianEnvelope(epa_rv)
 print(gauss_enve)
 plot(gauss_enve)
+```
 
+## Envelope
+
+```{r Demonstrating Envelope LogLinear}
+#| echo: true
+
+epa_rv <- named_rv("epanechnikov")
 loglinear_enve <-
-  LogLinearEnvelope(epa_rv,
-                    tangent_points = c(-0.7, -0.1, 0.2, 0.4, 0.8)
-                    )
+  LogLinearEnvelope(
+    epa_rv,
+    tangent_points = c(-0.7, -0.1, 0.2, 0.4, 0.8)
+    )
 print(loglinear_enve)
 plot(loglinear_enve)
 
 
 ```
-## Sampler{.scrollable}
+## Sampler
 
 ```{r Demonstrating rejection_sampler}
 #| echo: true
@@ -95,7 +114,7 @@ set.seed(NULL)
 
 ```
 
-## Initial Benchmark
+## Epanechnikov Benchmark
 
 ```{r Initial Benchmark for envelopes (epanechnikov)}
 #| cache: true
@@ -106,7 +125,7 @@ bm %>%
   ggplot2::geom_point()
 ```
 
-## Benchmarking with the poisson prior
+## Poisson Prior Benchmark
 
 ```{r Initial Benchmark for envelopes (poisson prior)}
 #| cache: true
@@ -119,20 +138,20 @@ bm %>%
   ggplot2::geom_point()
 ```
 
-## Profiling the fast implementations{.scrollable}
+## Profiling the fast implementations{.smaller .scrollable}
 
-- Provis does not catch it, but the slow operation is exponentiation.
+- Profiles on the next slide due to error in presentation render
 
-```{r Profiling Samplers}
+```{r Profiling Samplers, eval = F}
 #| cache: true
 #| echo: true
 
 set.seed(0)
 
 suppressWarnings(
-  gauss_sampler <- named_rv("poisson") %>% GaussianEnvelope() %>% rejection_sampler()
+  gauss_sampler <- named_rv("poisson prior") %>% GaussianEnvelope() %>% rejection_sampler()
 )
-adapted_sampler <- named_rv("poisson") %>%
+adapted_sampler <- named_rv("poisson prior") %>%
   LogLinearEnvelope(autoselection_msg = F) %>%
   rejection_sampler(evalmode = 1)
 
@@ -153,6 +172,15 @@ profvis::profvis(
 set.seed(NULL)
 
 ```
+
+## Profiling the fast implementations{.smaller}
+
+![Profvis for adaptive envelope](2_poorly_rendered_profile_adapt.png)
+
+
+![Profvis for gaussian envelope](2_poorly_rendered_profile_gauss.png)
+
+- Turns out that the exponential function is the time-consuming part!
 
 ## Revisiting the poisson prior{.smaller}
 The target log-density is
@@ -185,7 +213,7 @@ $$
 
 With $a_k = \frac{1}{k!}\sum_{i=1}^{100} (x_i - \bar{x})^k$, thus
 $$
-\log(f_0(y)) \approx e^{y\bar{x}}p_n(y)
+\log(f_0(y)) \approx e^{y\bar{x}}p(y)
 $$
 
 ## Improving the Taylor expansion{.smaller}
@@ -211,11 +239,11 @@ $$
 
 ## Taylor expansion implementation{.smaller}
 
-```r{code-line-numbers="1-3|5-12|13-33"}
-vandermonde <- function(y, n){
-  outer(y, 0:n, `^`) %>% t()
-}
+:::: {.columns}
 
+::: {.column width="70%"}
+
+```r
 polycoef <- function(n, x = poisson$x){
   x_centralized <- x - mean(x)
   0:n %>%
@@ -223,28 +251,57 @@ polycoef <- function(n, x = poisson$x){
       sum(x_centralized^n)
     }) / factorial(0:n)
 }
+```
 
-poisson_prior_approximation <- function(x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), orders = 4){
+```r
+vandermonde <- function(y, n){
+  outer(y, 0:n, `^`) %>% t()
+}
+
+```
+
+```r{code-line-numbers="14-19"}
+poisson_prior_approximation <- function(
+x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), K = 4){
   xz <- sum(x*z)
   groups <- cut(x, breaks, labels = F)
   x_means <- 1:max(groups) %>%
     purrr::map_dbl(.f = function(k){
       mean(x[groups == k])
     })
-  coef <- list(k = 1:max(groups), n = orders) %>%
+  coef <- list(k = 1:max(groups), n = K) %>%
     purrr::pmap(.f = function(k, n){
       polycoef(n, x[groups == k])
     }) %>%
     purrr::reduce(.f = rbind)
   approximation <- function(y){
-    VMy <- vandermonde(y, max(orders))
+    VMy <- vandermonde(y, K)
     p <- coef %*% VMy
     expmean <- exp(outer(x_means, y))
     y*xz - colSums(p * expmean)
   }
-  approximation
-}
+  approximation}
 ```
+:::
+
+::: {.column width="30%"}
+
+$$
+\texttt{polycoef} \quad , \quad a_{k,h} = \frac{1}{h!}\sum_{i \in I_k}(x_i - \bar{x}_k)^h
+$$
+
+$$
+\texttt{coef %*% Vmy} \quad , \quad p_k(y) = \sum_{h=0}^{n_k} a_{k,h} y^h
+$$
+
+Collecting terms
+
+$$
+\log(f_0(y)) \approx y \sum_{i=1}^{100} x_iz_i - \sum_{k=1}^K e^{y\bar{x}_k}p_k(y)
+$$
+:::
+
+::::
 
 ## Benchmarking the Taylor expansion
 
@@ -257,22 +314,22 @@ bm %>%
   ggplot2::geom_point()
 ```
 
-## Are we simulating from the correct distribution?{.scrollable .smaller}
+## Are we simulating from the correct distribution?{.smaller}
 
-```{r Check that the Taylor expansion is a sufficient approximation}
+```{r Check that the Taylor expansion is a sufficient approximation - setup}
 #| cache: true
 #| echo: true
 
 set.seed(0)
 
-ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), order = 4)
-ppa_inaccurate <- poisson_prior_approximation(breaks = c(0, 4), order = 4)
+ppa_precise <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), order = 4)
+ppa_imprecise <- poisson_prior_approximation(breaks = c(0, 4), order = 4)
 
-loworder_sampler <- RandomVariable(log_f = ppa_loworder, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
+sampler_ppa_precise <- RandomVariable(log_f = ppa_precise, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
   LogLinearEnvelope() %>% 
   rejection_sampler()
 
-inaccurate_sampler <- RandomVariable(log_f = ppa_inaccurate, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
+sampler_ppa_imprecise <- RandomVariable(log_f = ppa_imprecise, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
   LogLinearEnvelope() %>% 
   rejection_sampler()
 
@@ -281,30 +338,41 @@ exact_sampler <- RandomVariable(log_f = poisson_prior_log_f, log_f_prime = poiss
   rejection_sampler()
 
 for (i in 1:25){
-  loworder_sampler(5000, train = T, adapt_enve = T)
-  inaccurate_sampler(5000, train = T, adapt_enve = T)
+  sampler_ppa_precise(5000, train = T, adapt_enve = T)
+  sampler_ppa_imprecise(5000, train = T, adapt_enve = T)
   exact_sampler(5000, train = T, adapt_enve = T)
 }
+```
 
+## Are we simulating from the correct distribution?{.smaller}
+
+```{r Check that the Taylor expansion is a sufficient approximation - simulation}
+#| cache: true
+#| echo: true
 N <- 1e6
-loworder_sim <- loworder_sampler(N)
-inaccurate_sim <- inaccurate_sampler(N)
+precise_sim <- sampler_ppa_precise(N)
+imprecise_sim <- sampler_ppa_imprecise(N)
 exact_sim <- exact_sampler(N)
 exact_sim_2 <- exact_sampler(N)
 
-loworder_dens <- density(loworder_sim)
-inaccurate_dens <- density(inaccurate_sim)
+precise_dens <- density(precise_sim)
+imprecise_dens <- density(imprecise_sim)
 exact_dens <- density(exact_sim)
 
-ks.test(inaccurate_sim, exact_sim)
-ks.test(loworder_sim, exact_sim)
-ks.test(exact_sim_2, exact_sim)
-
 set.seed(NULL)
-
 ```
 
-## Visual checks
+## Are we simulating from the correct distribution?{.smaller}
+
+```{r KS Tests}
+#| cache: true
+#| echo: true
+ks.test(imprecise_sim, exact_sim) # Hypothesis is rejected - Distribution is different
+ks.test(precise_sim, exact_sim) # Hypothesis is not rejected - Distributions may be the same
+ks.test(exact_sim_2, exact_sim) # Hypothesis is true, but almost rejected!
+```
+
+## Are we simulating from the correct distribution?{.smaller}
 
 ```{r Plotting results}
 
@@ -316,7 +384,7 @@ make_densdata <- function(dens_obj, label){
   )
 }
 
-data <- list(dens_obj = list(loworder_dens, inaccurate_dens, exact_dens),
+data <- list(dens_obj = list(precise_dens, imprecise_dens, exact_dens),
              label = list("Grouping, n = 4", "No Grouping, n = 4", "Exact")) %>% 
   purrr::pmap_dfr(.f = make_densdata)
 
