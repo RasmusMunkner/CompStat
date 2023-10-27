@@ -13,9 +13,9 @@
 #'
 #' @examples
 #' logistic_opfun <- make_logistic_loglikelihood()
-#' logistic_opfun$loglikelihood(rep(0,9))
+#' logistic_opfun$objective(rep(0,9))
 #' logistic_opfun$grad(rep(0,9))
-#' logistic_opfun$loglikelihood(rep(1,9), batch = 1:100)
+#' logistic_opfun$objective(rep(1,9), batch = 1:100)
 #' logistic_opfun$grad(rep(1,9), batch = 1:100)
 make_logistic_loglikelihood <- function(design = horses$Temperature %>%
                                        rescale_covariate() %>%
@@ -27,7 +27,7 @@ make_logistic_loglikelihood <- function(design = horses$Temperature %>%
                                        rescale_covariate() %>%
                                        quantile(seq(0.2, 0.8, 0.1)) %>%
                                        spline_pen_mat(),
-                                     lambda = 1
+                                     lambda = 0.001
 ){
 
   loglikelihood <- function(coef, batch = 1:nrow(design)){
@@ -44,7 +44,8 @@ make_logistic_loglikelihood <- function(design = horses$Temperature %>%
   structure(list(
     objective = loglikelihood,
     grad = grad,
-    n_param = nrow(penalty_matrix)
+    n_param = nrow(penalty_matrix),
+    n_index = length(response)
   ),
   class = "CompStatOptimizable"
   )
@@ -80,9 +81,9 @@ extend_and_sort <- function(x){
 spline_pen_mat <- function(inner_knots) {
   knots <- extend_and_sort(inner_knots)
   d <- diff(inner_knots)  # The vector of knot differences; b - a
-  g_ab <- splineDesign(knots, inner_knots, derivs = 2)
+  g_ab <- splines::splineDesign(knots, inner_knots, derivs = 2)
   knots_mid <- inner_knots[-length(inner_knots)] + d / 2
-  g_ab_mid <- splineDesign(knots, knots_mid, derivs = 2)
+  g_ab_mid <- splines::splineDesign(knots, knots_mid, derivs = 2)
   g_a <- g_ab[-nrow(g_ab), ]
   g_b <- g_ab[-1, ]
   (crossprod(d * g_a,  g_a) +

@@ -25,9 +25,7 @@ CompStatOptimizer <- function(key, lr, update_param){
 #'
 #' @return A CompStatOptimizer with key 'Adam'
 #' @export
-#'
-#' @examples
-Adam_Optimizer <- function(lr = 1e-3, beta_1 = 0.98, beta_2 = 0.999, eps = 1e-8){
+Adam_Optimizer <- function(lr = 1e-3, beta_1 = 0.98, beta_2 = 0.999, eps = 1e-8, ...){
 
   rho <- 0
   nu <- 0
@@ -42,13 +40,39 @@ Adam_Optimizer <- function(lr = 1e-3, beta_1 = 0.98, beta_2 = 0.999, eps = 1e-8)
 
 }
 
+#' Some funny optimizer with more quickly vanishing momentum
+#'
+#' @param lr
+#' @param beta_1
+#' @param beta_2
+#' @param vanish
+#' @param eps
+#' @param ...
+#'
+#' @return
+#' @export
+Vanishing_Adam_Optimizer <- function(lr = 1e-3, beta_1 = 0.98, beta_2 = 0.999, vanish = 1e-1, eps = 1e-8, ...){
+
+  rho <- 0
+  nu <- 0
+
+  update_param <- function(grad){
+    rho <<- (grad^2 / (grad^2 + vanish)) * beta_1 * rho + (1-beta_1) * grad
+    nu <<- beta_2 * nu + (1-beta_2) * grad^2
+    rho / (sqrt(nu) + eps)
+  }
+
+  CompStatOptimizer("Vanish", lr, update_param)
+
+}
+
 #' Vanilla/Identity optimizer
 #'
 #' @param lr A CompStatDecaySchedule or a scalar
 #'
 #' @return A CompStatOptimizer object applying pure gradient upgrades
 #' @export
-Vanilla_Optimizer <- function(lr = 1e-3){
+Vanilla_Optimizer <- function(lr = 1e-3, ...){
 
   update_param <- function(grad){
     grad

@@ -16,6 +16,7 @@ Imports:
     microbenchmark,
     purrr,
     Rcpp,
+    splines,
     stats,
     tibble,
     tidyr

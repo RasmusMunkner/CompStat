@@ -34,12 +34,19 @@ rescale_covariate <- function(x, method = "minmax"){
 #' sc <- stopping_criterion(maxiter = 75, tol_param = 0.01)
 #' sc(50)
 #' sc(100)
-stopping_criterion <- function(tol_obj = NULL,
-                               norm_obj = function(x) sum(x),
-                               tol_param = NULL,
-                               norm_param = function(x) sqrt(sum(x^2)),
-                               maxiter = 50
-                               ){
+stopping_criterion <- function(
+    maxiter = 50,
+    tol_obj = NULL,
+    norm_obj = function(x) sum(x),
+    tol_param = NULL,
+    norm_param = function(x) sqrt(sum(x^2))
+   ){
+
+  # If stopping_criterion is called on a CompStatStoppingCriterion, do nothing
+  if (class(maxiter) %in% c("CompStatStoppingCriterion")){
+    return(maxiter)
+  }
+
   stopper <- function(epoch, param = NULL, param_old = NULL, obj = NULL, obj_old = NULL){
 
     # Check maxiter criterion
@@ -91,11 +98,7 @@ polynomial_schedule <- function(lr_start, lr_later, K = 100, p = 1){
   lr_schedule <- function(epoch){
     lr_start / (1 + epoch^p / K)
   }
-  structure(list(
-    lr = lr_schedule
-    ),
-    class = "CompStatDecaySchedule"
-  )
+  lr_schedule
 }
 
 #' Constant learning rate schedule
@@ -109,11 +112,7 @@ polynomial_schedule <- function(lr_start, lr_later, K = 100, p = 1){
 #' const_decay <- constant_schedule(1)
 constant_schedule <- function(lr){
   lr_schedule <- function(epoch) lr
-  structure(list(
-    lr = lr_schedule
-  ),
-  class = "CompStatDecaySchedule"
-  )
+  lr_schedule
 }
 
 #' S3 object interface for tracing parameter optimization
@@ -126,13 +125,58 @@ constant_schedule <- function(lr){
 #' @examples
 #' parabola_optim <- optimizable_parabola(c(0,1,-2))
 #' trace <- GD(parabola_optim, lrate = 0.33)
-parameter_trace <- function(trace){
+CompStatTrace <- function(optimizable){
+  if (!("CompStatOptimizable" %in% class(optimizable))){
+    stop("Can only build CompStateTrace for CompStatOptimizable.")
+  }
   structure(list(
-    trace = trace,
-    final = trace[[length(trace)]]
-  ),
-  class = "CompStatParameterTrace"
-  )
+    parameter_trace = data.frame(matrix(vector(), 0, optimizable$n_param)) %>%
+      magrittr::set_colnames(paste0("p", 1:optimizable$n_param)),
+    objective_trace = numeric(),
+    grad_trace = data.frame(matrix(vector(), 0, optimizable$n_param)) %>%
+      magrittr::set_colnames(paste0("g", 1:optimizable$n_param)),
+    optimizable = optimizable
+  ), class = "CompStatTrace")
+}
+
+#' Generic method for extending objects
+#'
+#' @param extendable An object implementing an extension method
+#' @param extension A valid extension for the extendable
+#'
+#' @return The extended version of the extendable
+#' @export
+extend <- function(extendable, extension){
+  UseMethod("extend")
+}
+
+#' Convenience function to log new data to trace
+#'
+#' @param trace A CompStatTrace
+#' @param param A new vector of parameters to add to the trace
+#'
+#' @return An updates CompStatTrace
+#' @export
+#'
+#' @examples
+#' parabola <- optimizable_parabola(c(-2,0,1))
+#' trace <- CompStatTrace(parabola)
+#' trace <- trace %>% extend(c(3,2,1)) %>% extend(c(0,2,1)) %>% extend(c(-2,0,1))
+extend.CompStatTrace <- function(trace, param){
+  if (length(param) != trace$optimizable$n_param){
+    stop(paste0("New parameter values must be of the correct length", trace$optimizable$n_param, ")"))
+  }
+  pnames <- colnames(trace$parameter_trace)
+  gnames <- colnames(trace$grad_trace)
+  trace$parameter_trace <- trace$parameter_trace %>%
+    rbind(param, make.row.names = F) %>%
+    magrittr::set_colnames(pnames)
+  trace$objective_trace <- trace$objective_trace %>%
+    append(param %>% trace$optimizable$objective())
+  trace$grad_trace <- trace$grad_trace %>%
+    rbind(param %>% trace$optimizable$grad(), make.row.names = F) %>%
+    magrittr::set_colnames(gnames)
+  return(trace)
 }
 
 #' Plotting method for CompStatParameterTrace
@@ -142,30 +186,66 @@ parameter_trace <- function(trace){
 #'
 #' @return A ggplot of the parameter traces
 #' @export
-plot.CompStatParameterTrace <- function(x, ...){
-  x$trace %>%
-    purrr::reduce(.f = rbind) %>%
-    as.data.frame() %>%
-    dplyr::mutate(Epoch = dplyr::row_number()) %>%
-    tidyr::pivot_longer(cols = -Epoch, names_to = "Parameter", values_to = "Value") %>%
-    ggplot2::ggplot(ggplot2::aes(x = Epoch, y = Value, color = Parameter), ...) +
-    ggplot2::geom_line() +
-    ggplot2::theme(legend.position = "none")
+#'
+#' @examples
+#' parabola_optim <- optimizable_parabola(c(0,1,-2))
+#' trace <- just_screw_around(parabola_optim)
+#' trace %>% plot(type = "p")
+#'
+plot.CompStatTrace <- function(trace, type = "p"){
+  if (type == "p"){
+    trace$parameter_trace %>%
+      dplyr::mutate(Iteration = dplyr::row_number()) %>%
+      tidyr::pivot_longer(cols = -Iteration, names_to = "Parameter", values_to = "Value", names_ptypes = factor()) %>%
+      ggplot2::ggplot(ggplot2::aes(x = Iteration, y = Value, color = Parameter)) +
+      ggplot2::geom_line()
+  } else if (type == "o") {
+    trace$objective_trace %>%
+      tibble::tibble() %>%
+      magrittr::set_colnames("Objective") %>%
+      dplyr::mutate(Iteration = dplyr::row_number()) %>%
+      tidyr::pivot_longer(cols = -Iteration, names_to = "Parameter", values_to = "Value") %>%
+      ggplot2::ggplot(ggplot2::aes(x = Iteration, y = Value, color = Parameter)) +
+      ggplot2::geom_line()
+  }
 }
 
 #' Print method for CompStatParameterTrace
 #'
-#' @param x A CompStatParameter Trace
+#' @param trace A CompStatTrace
 #' @param ... Additional arguments passed to print.default
 #'
 #' @return Prints a summary of the parameter trace
 #' @export
 #'
 #' @examples
-print.CompStatParameterTrace <- function(x, ...){
-  print("---CompStatParameterTrace---", quote=F)
+print.CompStatTrace <- function(trace, ...){
+  print("---CompStatTrace---", quote=F)
   print("Final Parameters:", quote=F)
-  print(x$final, ...)
+  print(trace$parameter_trace %>% tail(1), ...)
+  print("Final Objective:", quote=F)
+  print(trace$objective_trace %>% tail(1), ...)
+}
+
+#' Extract the most recent parameters for a CompStatTrace
+#'
+#' @param trace A CompStatTrace
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' parabola_optim <- optimizable_parabola(c(0,1,-2))
+#' trace <- just_screw_around(parabola_optim, maxiter = 5)
+#' trace %>% tail()
+#' trace %>% tail(2)
+#' trace %>% tail(type = "o")
+tail.CompStatTrace <- function(trace, n = 1, type = "p"){
+  if (type == "p"){
+    trace$parameter_trace %>% `[`(nrow(.) - n + 1,) %>% unlist()
+  } else if (type == "o"){
+    trace$objective_trace %>% dplyr::nth(n = length(.) - n + 1)
+  }
 }
 
 #' Generic wrapper around CompStatOptimizable creation
@@ -210,6 +290,24 @@ optimizable_parabola <- function(minima){
   CompStatOptimizable(f, grad, n_param, n_index = 1)
 }
 
+#' Build a random trace
+#'
+#' @param optimizable A CompStatOptimizable to build the trace for
+#' @param maxiter A number of maximal iterations
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' parabola <- optimizable_parabola(c(-3,2,1,0))
+#' trace <- just_screw_around(parabola)
+just_screw_around <- function(optimizable, maxiter = 50){
+  trace <- CompStatTrace(optimizable)
+  for (epoch in 1:maxiter){
+    trace <- trace %>% extend(rnorm(optimizable$n_param))
+  }
+  trace
+}
 
 
 

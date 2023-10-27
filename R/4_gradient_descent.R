@@ -3,26 +3,31 @@
 #' Gradient descent method for CompStatOptimizable
 #'
 #' @param optimizable A CompStatOptimizable
+#' @param optimizer A CompStatOptimizer or a key corresponding to one
 #' @param init_param Initial parameters for optimization.
 #' @param lr Learning rate schedule
 #' @param stop_crit A CompStatStoppingCriterion. Alternatively a number of epochs.
+#' @param ... Additional arguments passed to the optimizer if it was specified via a key
 #'
 #' @return
 #' @export
 #'
 #' @examples
 #' parabola_optim <- optimizable_parabola(c(0,1,-2))
-#' SGD(parabola_optim, lrate = 0.33) %>% plot()
+#' trace <- SGD(parabola_optim, lr = 0.33)
+#' trace %>% plot()
+#' trace %>% plot(type = "o")
 SGD <- function(
     optimizable,
     optimizer = "vanilla",
     init_param = NULL,
-    lr = 1e-3,
     stop_crit = 50,
     shuffle = T,
     batch_size = 1,
     ...
     ){
+
+  browser()
 
   # Ensure stopping criterion is valid
   if (!(class(stop_crit) %in% c("CompStatStoppingCriterion"))){
@@ -33,22 +38,26 @@ SGD <- function(
   if (!(class(optimizer) %in% c("CompStatOptimizer"))){
     opt <-
       switch(optimizer,
-           "vanilla"= Vanilla_Optimizer(lr),
-           "adam" = Adam_Optimizer(lr, ...)
+           "vanilla"= Vanilla_Optimizer(...),
+           "adam" = Adam_Optimizer(...)
            )
   } else {
     opt <- optimizer
   }
 
-  # Initialize parameters
-  param <- vector(mode = "list", length = (stop_crit$maxiter + 1) * ceiling(optimizable$n_index / batch_size))
-  if (!is.null(init_param)){
-    param[[1]] <- init_param
-  } else {
-    param[[1]] <- rnorm(optimizable$n_param)
-  }
+  # Useful control quantities
+  batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
+  max_total_updates <- batches_per_epoch * stop_crit$maxiter
 
-  for (epoch in 2:length(param)){
+  # Initialize parameters
+  trace <- CompStatTrace(optimizable)
+  if (is.null(init_param)){
+    init_param <- rep(NA, optimizable$n_param)
+  }
+  init_param <- init_param %>% dplyr::coalesce(rnorm(optimizable$n_param))
+  trace <- extend(trace, init_param)
+
+  for (epoch in 1:stop_crit$maxiter){
 
     # Reshuffle observations
     if (shuffle){
@@ -58,26 +67,30 @@ SGD <- function(
     }
 
     # Apply minibatch gradient updates
-    for (b in 1:ceiling(optimizable$n_index / batch_size)){
+    for (b in 1:batches_per_epoch){
+      timestep <- epoch * batches_per_epoch + b
 
       grad <- optimizable$grad(
-        param[[epoch-1]],
+        trace %>% tail(),
         index_permutation[1+(b-1)*batch_size, min(1+b*batch_size, optimizable$n_index)]
       )
 
       update <- opt$lr(epoch) * opt$update_param(grad)
 
-      param[[epoch]] <- param[[epoch-1]] - update
+      trace <- trace %>% extend(tail(trace) - update)
 
-      if (stop_crit$check(epoch, param = param[[epoch-1]], param_old = param[[epoch]])){
-        return(param[1:epoch] %>% parameter_trace())
-      }
+    }
 
+    if (stop_crit$check(epoch,
+                        param = trace %>% tail(1), param_old = trace %>% tail(2),
+                        obj = trace %>% tail(1, type = "o"), trace %>% tail(2, type = "o"))
+        ){
+      return(trace)
     }
 
   }
 
-  return(param %>% parameter_trace())
+  return(trace)
 }
 
 

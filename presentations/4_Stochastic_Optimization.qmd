@@ -2,10 +2,11 @@
 title: "Stochastic Optimization"
 author: "Rasmus V. Munkner"
 format: revealjs
+slide-number: c/t
 ---
 
 ## Problem statement
-We consider the issue of minimizing a penalized, negative loglikelihhood
+We consider the issue of minimizing a penalized, negative loglikelihood
 
 $$
 H(\beta) = -\frac{1}{N}\sum_{i=1}^N\left(y_i\log p_i(\beta) + (1-y_i)\log(1-p_i(\beta))\right) + \lambda||f_\beta''||_2^2
@@ -65,6 +66,120 @@ $$
 \int_a^b g_{ij}(x)dx = \frac{b-a}{6}\left(g_{ij}(a) + 4g_{ij}\left(\frac{a+b}{2}\right) + g_{ij}(b)\right)
 $$
 is an exact equality.
+
+## Stochastic Optimization Algorithms
+We consider versions of stochastic gradient descent with updates
+$$
+\beta^{(n+1)} = \beta^{(n)} - \rho^{(n)} \nabla H(\beta^{(n)})
+$$
+And corresponding version with minibatches, momentum and Adam.
+
+## Benchmark
+
+```{r Testing SGD Implementations}
+
+logistic_opfun <- make_logistic_loglikelihood()
+
+lr <- polynomial_schedule(0.1, 0.001, K = 50)
+vanilla_sgd_opt <- Vanilla_Optimizer(lr)
+momentum_sgd_opt <- Adam_Optimizer(lr, beta_1 = 0.9, beta_2 = 1, eps = 1)
+adam_sgd_opt <- Adam_Optimizer(lr, beta_1 = 0.9, beta_2 = 0.99)
+vanish_sgd_opt <- Vanishing_Adam_Optimizer(1, beta_1 = 0.9, beta_2 = 0.99, vanish = 1)
+
+set.seed(0)
+opt_param <- rnorm(10)
+init_param <- rnorm(10)
+test_optimization <- optimizable_parabola(opt_param)
+set.seed(NULL)
+
+sc <- stopping_criterion(tol_obj = 1e-6, maxiter = 999)
+
+trace_vanilla <- SGD(
+  test_optimization,
+  optimizer = vanilla_sgd_opt,
+  init_param = init_param,
+  stop_crit = sc
+)
+
+trace_momentum <- SGD(
+  test_optimization,
+  optimizer = momentum_sgd_opt,
+  init_param = init_param,
+  stop_crit = sc
+)
+
+trace_adam <- SGD(
+  test_optimization,
+  optimizer = adam_sgd_opt,
+  init_param = init_param,
+  stop_crit = sc
+)
+
+trace_vanish <- SGD(
+  test_optimization,
+  optimizer = vanish_sgd_opt,
+  init_param = init_param,
+  stop_crit = sc
+)
+
+trace_vanilla %>% plot()
+trace_momentum %>% plot()
+trace_adam %>% plot()
+trace_vanish %>% plot()
+
+final_params <- list(trace_vanilla, trace_momentum, trace_adam) %>% 
+  purrr::map_dfr(.f = tail)
+
+final_params %>% 
+  tibble::add_row(opt_param %>% as.list() %>% magrittr::set_names(colnames(final_params)) %>% tibble::as_tibble()) %>% 
+  purrr::map_dfc(.f = function(x){x %>% range() %>% diff()})
+
+```
+
+```{r Microbenchmarks}
+
+sgd_vanilla <- function(){
+  SGD(
+    logistic_opfun,
+    optimizer = vanilla_sgd_opt,
+    stop_crit = sc
+  )
+}
+
+sgd_vanilla()
+
+sgd_momentum <- function(){
+  SGD(
+    logistic_opfun,
+    optimizer = momentum_sgd_opt,
+    init_param = init_param,
+    stop_crit = sc
+  )
+}
+
+sgd_adam <- function(){
+  SGD(
+    logistic_opfun,
+    optimizer = adam_sgd_opt,
+    init_param = init_param,
+    stop_crit = sc
+  )
+}
+
+profvis::profvis(
+  sgd_vanilla()
+)
+
+
+microbenchmark::microbenchmark(
+  sgd_vanilla(),
+  sgd_momentum(),
+  sgd_adam()
+) %>% 
+  ggplot2::autoplot()
+
+
+```
 
 
 
