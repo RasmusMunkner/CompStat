@@ -17,7 +17,7 @@ $$
 $$
 
 
-## A matrix derivation of the relevant likelihood
+## A matrix derivation of the relevant likelihood{style="font-size: 35%"}
 Consider the negative loglikelihood
 $$
 H(\beta) =
@@ -40,12 +40,12 @@ $$
 
 And
 $$
-g(p) = -\frac{1}{N}e^T(y \log(p) + (1-y)\log(1-p))
+g(p) = -\frac{1}{N}\textbf{1}^T(y \log(p) + (1-y)\log(1-p))
 $$
 
 Thus
 $$
-D_pg(p) = -\frac{1}{N}e^T\cdot\text{diag}\left(\frac{y}{p} + \frac{1-y}{1-p}\right)
+D_pg(p) = -\frac{1}{N}\textbf{1}^T\cdot\text{diag}\left(\frac{y}{p} + \frac{1-y}{1-p}\right)
 $$
 
 
@@ -110,7 +110,7 @@ And corresponding version with minibatches, momentum and Adam.
 
 ## Benchmark
 
-```{r Testing SGD Implementations}
+```{r Testing SGD Implementations, eval = F}
 
 logistic_opfun <- make_logistic_loglikelihood()
 
@@ -170,7 +170,7 @@ final_params %>%
 
 ```
 
-```{r Profiling Full R Implementation}
+```{r Profiling Full R Implementation, eval = F}
 
 logistic_opfun <- make_logistic_loglikelihood()
 adam_sgd_opt <- Adam_Optimizer(1e-3)
@@ -194,7 +194,7 @@ microbenchmark::microbenchmark(
 ```
 
 
-```{r Microbenchmarks}
+```{r Microbenchmarks, eval = F}
 
 sgd_vanilla <- function(){
   SGD(

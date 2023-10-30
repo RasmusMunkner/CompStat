@@ -16,6 +16,7 @@ Imports:
     microbenchmark,
     purrr,
     Rcpp,
+    RcppArmadillo,
     splines,
     stats,
     tibble,
@@ -32,4 +33,4 @@ URL: https://github.com/RasmusMunkner/CompStat
 BugReports: https://github.com/RasmusMunkner/CompStat/issues
 VignetteBuilder: knitr
 LinkingTo: 
-    Rcpp
+    Rcpp, RcppArmadillo
