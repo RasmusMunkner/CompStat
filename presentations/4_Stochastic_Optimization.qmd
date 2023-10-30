@@ -16,6 +16,40 @@ $$
 \text{logit}(p_i(\beta)) = f(x_i\mid \beta) = \varphi(x_i)^T\beta
 $$
 
+
+## A matrix derivation of the relevant likelihood
+Consider the negative loglikelihood
+$$
+H(\beta) =
+- \frac{1}{N}\sum_{i=1}^N y_i \log(p_i(\beta)) + (1-y_i)\log(1-p_i(\beta)) =
+g(p(\beta))
+$$
+with $g: \mathbb{R}^N \rightarrow \mathbb{R}$ and $p: \mathbb{R}^p \rightarrow \mathbb{R}^n$. It holds that
+$$
+D_\beta H(\beta) = D_p(g(p(\beta))) \cdot D_\beta p(\beta)
+$$
+
+Note that
+$$
+p(\beta) = \frac{e^{X\beta}}{1+e^{X\beta}}
+$$
+Thus
+$$
+D_\beta p(\beta) = \text{diag}\left(\frac{e^{X\beta}}{(1+e^{X\beta})^2}\right)X
+$$
+
+And
+$$
+g(p) = -\frac{1}{N}e^T(y \log(p) + (1-y)\log(1-p))
+$$
+
+Thus
+$$
+D_pg(p) = -\frac{1}{N}e^T\cdot\text{diag}\left(\frac{y}{p} + \frac{1-y}{1-p}\right)
+$$
+
+
+
 ## Some mathematical details {style="font-size: 35%"}
 Note that
 $$
@@ -135,6 +169,30 @@ final_params %>%
   purrr::map_dfc(.f = function(x){x %>% range() %>% diff()})
 
 ```
+
+```{r Profiling Full R Implementation}
+
+logistic_opfun <- make_logistic_loglikelihood()
+adam_sgd_opt <- Adam_Optimizer(1e-3)
+
+trace <- SGD(logistic_opfun, adam_sgd_opt, batch_size = 100, stop_crit = 200)
+plot(trace)
+
+profvis::profvis(
+  SGD(
+    logistic_opfun, adam_sgd_opt, batch_size = 100,
+    stop_crit = 1000, trace_precision ="epoch"),
+  simplify = F
+)
+
+microbenchmark::microbenchmark(
+  SGD(logistic_opfun, vanilla_sgd_opt, batch_size = 100, stop_crit = 10, trace_precision = "batch"),
+  SGD(logistic_opfun, vanilla_sgd_opt, batch_size = 100, stop_crit = 10, trace_precision = "epoch"),
+  SGD(logistic_opfun, vanilla_sgd_opt, batch_size = 100, stop_crit = 10, trace_precision = "none")
+)
+
+```
+
 
 ```{r Microbenchmarks}
 

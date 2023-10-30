@@ -244,7 +244,7 @@ tail.CompStatTrace <- function(trace, n = 1, type = "p"){
   if (type == "p"){
     trace$parameter_trace %>% `[`(nrow(.) - n + 1,) %>% unlist()
   } else if (type == "o"){
-    trace$objective_trace %>% dplyr::nth(n = length(.) - n + 1)
+    trace$objective_trace %>% .subset2(length(.) - n + 1)
   }
 }
 

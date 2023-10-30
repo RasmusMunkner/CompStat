@@ -13,6 +13,9 @@
 #'
 #' @examples
 #' logistic_opfun <- make_logistic_loglikelihood()
+#' trace <- just_screw_around(logistic_opfun)
+#' trace <- SGD(logistic_opfun, lr = 0.0001, stop_crit = 20)
+#' trace <- SGD(logistic_opfun, lr = 0.0001, batch_size = 32)
 #' logistic_opfun$objective(rep(0,9))
 #' logistic_opfun$grad(rep(0,9))
 #' logistic_opfun$objective(rep(1,9), batch = 1:100)
@@ -38,7 +41,8 @@ make_logistic_loglikelihood <- function(design = horses$Temperature %>%
 
   grad <- function(coef, batch = 1:nrow(design)){
     eta <- exp(design[batch,] %*% coef)
-    -t(design[batch,]) %*% (eta / (1 + eta) + response[batch] * (1-eta) / (1+eta)) / length(batch) + 2 * lambda * penalty_matrix %*% coef
+    res <- -t(design[batch,, drop=F]) %*% (eta / (1 + eta) + response[batch] * (1-eta) / (1+eta)) / length(batch) + 2 * lambda * penalty_matrix %*% coef
+    res[,1]
   }
 
   structure(list(
