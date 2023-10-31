@@ -112,6 +112,92 @@ SGD <- function(
   return(trace)
 }
 
+#' Wrapper function for cpp sgd for the logistic loglikelihood
+#'
+#' @param design
+#' @param init_coef
+#' @param y
+#' @param lr
+#' @param beta1
+#' @param beta2
+#' @param eps
+#' @param batch_size
+#' @param stop_crit
+#' @param disable_adam
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' # Demonstration of the functionality
+#' n <- 1000
+#' p <- 3
+#' sll <- simple_logistic_loglikelihood(n, p)
+#' init_coef <- runif(p)
+#' lr <-  1e-2
+#' batch_size <- 100
+#' maxiter <- 1000
+#' trace <- SGC_CPP_Wrapper(
+#' design = sll$X,
+#' init_coef = init_coef,
+#' y = sll$y,
+#' lr = lr,
+#' stop_crit = maxiter,
+#' batch_size = batch_size,
+#' disable_adam = F
+#' )
+#'
+#' trace %>% dplyr::mutate(iter = dplyr::row_number()) %>%
+#' tidyr::pivot_longer(cols = -iter, names_to = "coef", values_to = "value") %>%
+#' ggplot2::ggplot(ggplot2::aes(x = iter, y = value, color = coef)) +
+#' ggplot2::geom_line()
+SGC_CPP_Wrapper <- function(
+    design, init_coef, y,
+    pen_matrix = matrix(0, nrow = ncol(design), ncol = ncol(design)),
+    lambda = 0.001,
+    lr = 1e-3, beta1 = 0.9, beta2 = 0.95, eps = 1e-8, batch_size = 32,
+    stop_crit = 50,
+    disable_adam = T
+    ){
+
+  stop_crit <- stopping_criterion(stop_crit)
+  if (!is.function(lr)){
+    if(length(lr) != stop_crit$maxiter){
+      if (length(lr) == 1){
+        lrate <- rep(lr, stop_crit$maxiter)
+      } else {
+        stop("lr should be a scalar, a vector of length maxiter or a function.")
+      }
+    } else {
+      lrate <- lr
+    }
+  } else {
+    lrate <- lr(1:stop_crit$maxiter)
+  }
+
+
+  if (disable_adam){
+    beta1 <- 0
+    beta2 <- 1
+    eps <- 1
+  }
+
+  coef_trace <- SGD_CPP(
+    design = design,
+    coef = init_coef,
+    y = y,
+    lr = lrate,
+    maxiter = stop_crit$maxiter,
+    batch_size = batch_size,
+    adam_beta1 = beta1,
+    adam_beta2 = beta2,
+    adam_eps = eps
+    ) %>%
+    purrr::map_dfr(.f = function(x) x %>% as.vector() %>% setNames(paste0("p", seq_along(init_coef))))
+
+  return(coef_trace)
+
+}
 
 
 

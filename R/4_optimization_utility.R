@@ -290,6 +290,50 @@ optimizable_parabola <- function(minima){
   CompStatOptimizable(f, grad, n_param, n_index = 1)
 }
 
+#' Create a logistic regression setup with known coefficients
+#'
+#' @param n The number of observations
+#' @param p The number of parameters
+#' @param beta The coefficients. Defaults to 1:p
+#'
+#' @return A list containing the regression problem and the true coefficients
+#' @export
+#'
+#' @examples
+#' sll <- simple_logistic_loglikelihood(n = 1000)
+#' data <- cbind(sll$X, sll$y) %>% magrittr::set_colnames(c(paste0("x", 1:ncol(sll$X)), "y")) %>% data.frame()
+#' glmfit <- glm(y ~ .-1, family = binomial(), data = data)
+#' glmfit$coef
+simple_logistic_loglikelihood <- function(n = 10, p = 2, beta = 1:p){
+  X <- matrix(rnorm(n * p), ncol = p)
+  y <- rbinom(n, 1, p = exp(X %*% beta)/(1+exp(X %*% beta)))
+  return(list(X = X, y = y, beta = beta))
+}
+
+#' Create a regression with known targets
+#'
+#' @param n
+#' @param p
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' #Showing an example of SGD optimization for this loglikelihood
+#' sll <- simple_logistic_loglikelihood_optimizable(n = 1000)
+#' trace <- SGD(sll, init_param = c(0.8, 2.1), lr = 0.05, batch_size = 100, stop_crit = stopping_criterion(maxiter = 50))
+#' trace %>% plot(type = "o")
+#' trace %>% plot(type = "p")
+simple_logistic_loglikelihood_optimizable <- function(n = 10, p = 2, beta = 1:p){
+  sll <- simple_logistic_likelihood(n,p,beta)
+  make_logistic_loglikelihood(
+    design = sll$X,
+    response = sll$y,
+    penalty_matrix = matrix(0, nrow = ncol(sll$X), ncol = ncol(sll$X)),
+    lambda = 0
+  )
+}
+
 #' Build a random trace
 #'
 #' @param optimizable A CompStatOptimizable to build the trace for

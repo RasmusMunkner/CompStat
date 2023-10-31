@@ -36,20 +36,31 @@ make_logistic_loglikelihood <- function(design = horses$Temperature %>%
   loglikelihood <- function(coef, batch = 1:nrow(design)){
     eta <- exp(design[batch,] %*% coef)
     p <- eta / (1 + eta)
-    -mean(response[batch] * log(p) + (1-response[batch]) * log(1-p)) + 2 * lambda * t(coef) %*% penalty_matrix %*% coef
+    -mean(response[batch] * log(p) + (1-response[batch]) * log(1-p)) + lambda * t(coef) %*% penalty_matrix %*% coef
   }
 
   grad <- function(coef, batch = 1:nrow(design)){
-    eta <- exp(design[batch,] %*% coef)
-    res <- -t(design[batch,, drop=F]) %*% (eta / (1 + eta) + response[batch] * (1-eta) / (1+eta)) / length(batch) + 2 * lambda * penalty_matrix %*% coef
-    res[,1]
+    X <- design[batch,]
+    y <- response[batch]
+
+    eta <- exp(X %*% coef)
+    p <- eta / (1 + eta)
+    dp <- t(X) %*% diagmat(eta / (1 + eta)^2)
+    dg <-  - (y/p - (1-y)/(1-p)) / length(batch)
+    grad <- (dp %*% dg %>% as.vector()) + ((2 * lambda * penalty_matrix %*% coef) %>% as.vector())
+    grad
+
   }
 
   structure(list(
     objective = loglikelihood,
     grad = grad,
     n_param = nrow(penalty_matrix),
-    n_index = length(response)
+    n_index = length(response),
+    design = design,
+    response = response,
+    penalty_matrix = penalty_matrix,
+    lambda = lambda
   ),
   class = "CompStatOptimizable"
   )
@@ -66,6 +77,21 @@ make_logistic_loglikelihood <- function(design = horses$Temperature %>%
 #' 1:6 %>% extend_and_sort()
 extend_and_sort <- function(x){
   sort(c(rep(range(x), 3), x))
+}
+
+#' Builds a diagonal matrix from a vector
+#'
+#' @param v A vector
+#'
+#' @return A diagonal matrix with v on the diagonal
+#' @export
+#'
+#' @examples
+#' diagmat(c(1,2,3))
+diagmat <- function(v){
+  m <- matrix(0, nrow = length(v), ncol = length(v))
+  diag(m) <- v
+  m
 }
 
 #' Calculate the penalty matrix using spline-design for basis splines

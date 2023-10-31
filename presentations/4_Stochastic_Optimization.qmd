@@ -18,7 +18,7 @@ $$
 
 
 ## A matrix derivation of the relevant likelihood{style="font-size: 35%"}
-Consider the negative loglikelihood
+Consider the negative loglikelihood without penalization
 $$
 H(\beta) =
 - \frac{1}{N}\sum_{i=1}^N y_i \log(p_i(\beta)) + (1-y_i)\log(1-p_i(\beta)) =
@@ -45,13 +45,13 @@ $$
 
 Thus
 $$
-D_pg(p) = -\frac{1}{N}\textbf{1}^T\cdot\text{diag}\left(\frac{y}{p} + \frac{1-y}{1-p}\right)
+D_pg(p) = -\frac{1}{N}\textbf{1}^T\cdot\text{diag}\left(\frac{y}{p} - \frac{1-y}{1-p}\right)
 $$
 
 
 
-## Some mathematical details {style="font-size: 35%"}
-Note that
+## Penalization {style="font-size: 35%"}
+For the penalization term
 $$
 ||f''_\beta||_2^2 =
 \int f''_\beta(x)^2dx =
@@ -61,31 +61,17 @@ $$
 \beta^T \Omega \beta
 $$
 
-Also
-$$
-\log(p_i(\beta)) =
-\log\left(\frac{e^{\varphi(x_i)^T\beta}}{1+e^{\varphi(x_i)^T\beta}}\right) =
-\varphi_i(x)^T\beta - \log\left(1 + e^{\varphi(x_i)^T\beta}\right) \\
-\log(1-p_i(\beta)) =
-\log\left(1 - \frac{e^{\varphi(x_i)^T\beta}}{1+e^{\varphi(x_i)^T\beta}}\right) =
--\log\left(1 + e^{\varphi(x_i)^T\beta}\right)
-$$
-
-Hence
-$$
-\nabla_\beta \log(p_i(\beta)) =
-\varphi(x_i) - \frac{e^{\varphi(x_i)^T\beta}}{1 + e^{\varphi(x_i)^T\beta}}\varphi(x_i) =
-\frac{1}{1 + e^{\varphi(x_i)^T\beta}}\varphi(x_i) \\
-\nabla_\beta \log(1 - p_i(\beta)) =
--\frac{e^{\varphi(x_i)^T\beta}}{1 + e^{\varphi(x_i)^T\beta}}\varphi(x_i)
-$$
-
 Thus
+
 $$
-\nabla_\beta H(\beta) =
--\frac{1}{N}\sum_{i=1}^N\left( \frac{y_i}{1 + e^{\varphi(x_i)^T\beta}}\varphi(x_i) - \frac{(1-y_i)e^{\varphi(x_i)^T\beta}}{1 + e^{\varphi(x_i)^T\beta}}\varphi(x_i)\right) + 2\lambda \Omega\beta := \\
--\frac{1}{N}\sum_{i=1}^N \left(\frac{y_i + (1-y_i)\eta_i}{1+\eta_i}\right)\varphi(x_i) + 2\lambda \Omega \beta =
--\frac{1}{N}\sum_{i=1}^N \left(\frac{\eta_i}{1 + \eta_i} + y_i\frac{1-\eta_i}{1+\eta_i}\right)\varphi(x_i) + 2\lambda \Omega \beta
+D_\beta ||f_\beta''||_2^2 = 2 \beta^T\Omega
+$$
+
+This can be seem by utilizing
+
+$$
+\beta^T\Omega \beta = \beta^T \Omega^{T/2} \Omega^{1/2} \beta = \xi^T\xi \\
+D_\beta(\beta^T\Omega\beta) = D_\xi(\xi^T\xi) \cdot D_\beta(\Omega^{1/2}\beta) = 2\xi^T\Omega^{1/2} = 2\beta^T\Omega^{T/2}\Omega^{1/2} = 2\beta^T\Omega
 $$
 
 ## On the calculation of $\Omega$ {.smaller}
@@ -112,13 +98,12 @@ And corresponding version with minibatches, momentum and Adam.
 
 ```{r Testing SGD Implementations, eval = F}
 
-logistic_opfun <- make_logistic_loglikelihood()
+logistic_ll <- make_logistic_loglikelihood()
 
 lr <- polynomial_schedule(0.1, 0.001, K = 50)
 vanilla_sgd_opt <- Vanilla_Optimizer(lr)
 momentum_sgd_opt <- Adam_Optimizer(lr, beta_1 = 0.9, beta_2 = 1, eps = 1)
 adam_sgd_opt <- Adam_Optimizer(lr, beta_1 = 0.9, beta_2 = 0.99)
-vanish_sgd_opt <- Vanishing_Adam_Optimizer(1, beta_1 = 0.9, beta_2 = 0.99, vanish = 1)
 
 set.seed(0)
 opt_param <- rnorm(10)

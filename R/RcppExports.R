@@ -5,8 +5,8 @@ batch_gradient <- function(design, coef, y) {
     .Call(`_CompStat_batch_gradient`, design, coef, y)
 }
 
-SGD_CPP <- function(design, coef, y, lr, maxiter, batch_size) {
-    .Call(`_CompStat_SGD_CPP`, design, coef, y, lr, maxiter, batch_size)
+SGD_CPP <- function(design, coef, y, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps) {
+    .Call(`_CompStat_SGD_CPP`, design, coef, y, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps)
 }
 
 epanechnikov_l2norm_runningC <- function(x, r) {

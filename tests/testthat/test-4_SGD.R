@@ -1,29 +1,26 @@
-test_that("multiplication works", {
-  expect_equal(2 * 2, 4)
+
+
+
+test_that("cpp batch gradient results are consistent with r results", {
+
+  t <- 20
+  p <- 4
+
+  sll <- simple_logistic_loglikelihood(n = 100, p = p)
+
+  optfun_loglik <- make_logistic_loglikelihood(
+    design = sll$X, response = sll$y,
+    penalty_matrix = matrix(0, nrow = ncol(sll$X), ncol = ncol(sll$X)),
+    lambda = 0
+    )
+
+  random_coef <- 1:t %>% purrr::map(.f = function(i) rnorm(p))
+
+  for (i in 1:t){
+    expect_equal(
+      batch_gradient(sll$X, random_coef[[i]], sll$y) %>% as.vector(),
+      optfun_loglik$grad(random_coef[[i]])
+      )
+  }
+
 })
-
-
-
-
-batch_gradient(
-  design = matrix(c(1, 0, 0, 2, 1, 4), ncol = 2),
-  coef = c(1,2),
-  y = c(1.5,3, 2)
-  )
-
-res <- SGD_CPP(design, coef, y, 0.001, 500, 1)
-
-plot(seq_along(res$obj), res$obj)
-
-
-
-
-eta <- design %*% res$coef[[500]]
-p <- exp(eta) / (1+exp(eta))
-diag_dummy <- diag(1, length(eta))
-diag(diag_dummy) <- eta / (1+ eta)^2
-dp <-  diag_dummy %*% design
-g <- -1 / length(y) * sum(y * log(p) + (1-y) * log(1-p))
-dg <- - (y / p + (1-y) / (1-p)) / length(y)
-grad <- t(dp) %*% dg
-grad
