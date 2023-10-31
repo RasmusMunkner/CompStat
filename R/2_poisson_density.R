@@ -16,7 +16,8 @@ vandermonde <- function(y, n, mode = "r"){
   switch(mode,
          "c" = vmC(y,n),
          "c2" = vmC2(y,n),
-         "r" = outer(y, 0:n, `^`) %>% t()
+         "r" = outer(y, 0:n, `^`) %>% t(),
+         "poly" = cbind(rep(1,length(y)), poly(y, degree = n, raw = T, simple = T)) %>% t()
          )
 }
 

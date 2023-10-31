@@ -66,19 +66,6 @@ make_logistic_loglikelihood <- function(design = horses$Temperature %>%
   )
 }
 
-#' Convenience function for sorting a vector and adding three copies of each endpoint to the vector
-#'
-#' @param x A vector.
-#'
-#' @return The same vector, but sorted and with 3 copies of the endpoints added to either end.
-#' @export
-#'
-#' @examples
-#' 1:6 %>% extend_and_sort()
-extend_and_sort <- function(x){
-  sort(c(rep(range(x), 3), x))
-}
-
 #' Builds a diagonal matrix from a vector
 #'
 #' @param v A vector
@@ -92,33 +79,6 @@ diagmat <- function(v){
   m <- matrix(0, nrow = length(v), ncol = length(v))
   diag(m) <- v
   m
-}
-
-#' Calculate the penalty matrix using spline-design for basis splines
-#'
-#' The code is borrowed from chp.2 in the CompStat book
-#'
-#' @param inner_knots The inner knots used for the basis
-#'
-#' @return The penalty matrix corresponding to the calculated basis.
-#' @export
-#'
-#' @examples
-#' horses$Temperature %>%
-#' rescale_covariate() %>%
-#'   quantile(seq(0.2, 0.8, 0.1)) %>%
-#'   spline_pen_mat()
-spline_pen_mat <- function(inner_knots) {
-  knots <- extend_and_sort(inner_knots)
-  d <- diff(inner_knots)  # The vector of knot differences; b - a
-  g_ab <- splines::splineDesign(knots, inner_knots, derivs = 2)
-  knots_mid <- inner_knots[-length(inner_knots)] + d / 2
-  g_ab_mid <- splines::splineDesign(knots, knots_mid, derivs = 2)
-  g_a <- g_ab[-nrow(g_ab), ]
-  g_b <- g_ab[-1, ]
-  (crossprod(d * g_a,  g_a) +
-      4 * crossprod(d * g_ab_mid, g_ab_mid) +
-      crossprod(d * g_b, g_b)) / 6
 }
 
 # spline_pen_mat(c(1,2,3,4,5,6))

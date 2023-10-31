@@ -12,34 +12,38 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // batch_gradient
-arma::vec batch_gradient(arma::mat design, arma::vec coef, arma::vec y);
-RcppExport SEXP _CompStat_batch_gradient(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP) {
+arma::vec batch_gradient(arma::mat design, arma::vec coef, arma::vec y, arma::mat pen_matrix, double lambda);
+RcppExport SEXP _CompStat_batch_gradient(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< arma::mat >::type design(designSEXP);
     Rcpp::traits::input_parameter< arma::vec >::type coef(coefSEXP);
     Rcpp::traits::input_parameter< arma::vec >::type y(ySEXP);
-    rcpp_result_gen = Rcpp::wrap(batch_gradient(design, coef, y));
+    Rcpp::traits::input_parameter< arma::mat >::type pen_matrix(pen_matrixSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
+    rcpp_result_gen = Rcpp::wrap(batch_gradient(design, coef, y, pen_matrix, lambda));
     return rcpp_result_gen;
 END_RCPP
 }
 // SGD_CPP
-Rcpp::List SGD_CPP(arma::mat design, arma::vec coef, arma::vec y, NumericVector lr, int maxiter, int batch_size, double adam_beta1, double adam_beta2, double adam_eps);
-RcppExport SEXP _CompStat_SGD_CPP(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP lrSEXP, SEXP maxiterSEXP, SEXP batch_sizeSEXP, SEXP adam_beta1SEXP, SEXP adam_beta2SEXP, SEXP adam_epsSEXP) {
+Rcpp::List SGD_CPP(arma::mat design, arma::vec coef, arma::vec y, arma::mat pen_matrix, double lambda, NumericVector lr, int maxiter, int batch_size, double adam_beta1, double adam_beta2, double adam_eps);
+RcppExport SEXP _CompStat_SGD_CPP(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP, SEXP lrSEXP, SEXP maxiterSEXP, SEXP batch_sizeSEXP, SEXP adam_beta1SEXP, SEXP adam_beta2SEXP, SEXP adam_epsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< arma::mat >::type design(designSEXP);
     Rcpp::traits::input_parameter< arma::vec >::type coef(coefSEXP);
     Rcpp::traits::input_parameter< arma::vec >::type y(ySEXP);
+    Rcpp::traits::input_parameter< arma::mat >::type pen_matrix(pen_matrixSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type lr(lrSEXP);
     Rcpp::traits::input_parameter< int >::type maxiter(maxiterSEXP);
     Rcpp::traits::input_parameter< int >::type batch_size(batch_sizeSEXP);
     Rcpp::traits::input_parameter< double >::type adam_beta1(adam_beta1SEXP);
     Rcpp::traits::input_parameter< double >::type adam_beta2(adam_beta2SEXP);
     Rcpp::traits::input_parameter< double >::type adam_eps(adam_epsSEXP);
-    rcpp_result_gen = Rcpp::wrap(SGD_CPP(design, coef, y, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps));
+    rcpp_result_gen = Rcpp::wrap(SGD_CPP(design, coef, y, pen_matrix, lambda, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -95,8 +99,8 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_CompStat_batch_gradient", (DL_FUNC) &_CompStat_batch_gradient, 3},
-    {"_CompStat_SGD_CPP", (DL_FUNC) &_CompStat_SGD_CPP, 9},
+    {"_CompStat_batch_gradient", (DL_FUNC) &_CompStat_batch_gradient, 5},
+    {"_CompStat_SGD_CPP", (DL_FUNC) &_CompStat_SGD_CPP, 11},
     {"_CompStat_epanechnikov_l2norm_runningC", (DL_FUNC) &_CompStat_epanechnikov_l2norm_runningC, 2},
     {"_CompStat_eval_kdensC", (DL_FUNC) &_CompStat_eval_kdensC, 4},
     {"_CompStat_vmC", (DL_FUNC) &_CompStat_vmC, 2},

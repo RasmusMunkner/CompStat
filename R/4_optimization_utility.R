@@ -1,23 +1,4 @@
 
-#' Rescale covariates
-#'
-#' @param x Covariate vector to be rescaled
-#' @param method A string specifying the rescaling method
-#'
-#' @return
-#' @export
-#'
-#' @examples
-#' rescale_covariate(horses$Temperature, method = "minmax")
-#' rescale_covariate(horses$Temperature, method = "standard")
-rescale_covariate <- function(x, method = "minmax"){
-  switch(method,
-         minmax = (x-min(x)) / (max(x) - min(x)),
-         standard = (x - mean(x)) / sd(x),
-         quantile = stop("Not implemented quantile"),
-         default = x
-         )
-}
 
 #' Stopping criterions for optimization algorithms
 #'
@@ -312,10 +293,10 @@ simple_logistic_loglikelihood <- function(n = 10, p = 2, beta = 1:p){
 
 #' Create a regression with known targets
 #'
-#' @param n
-#' @param p
+#' @param n The number of observations
+#' @param p The number of coefficients
 #'
-#' @return
+#' @return A list containing a model matrix, the response and the true coefficients
 #' @export
 #'
 #' @examples

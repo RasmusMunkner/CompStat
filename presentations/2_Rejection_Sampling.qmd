@@ -482,13 +482,13 @@ NumericMatrix vmC2(NumericVector y, int n){
 #| cache: false
 #| echo: false
 set.seed(0)
-y <- runif(10000)
+y <- runif(100000)
 set.seed(NULL)
 microbenchmark::microbenchmark(
   vandermonde(y, 8, "r"),
   vandermonde(y, 8, "c"),
   vandermonde(y, 8, "c2"),
-  check = "equal"
+  vandermonde(y, 8, "poly")
 ) %>% 
   ggplot2::autoplot()
 ```
