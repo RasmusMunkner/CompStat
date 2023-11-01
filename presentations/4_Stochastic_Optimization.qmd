@@ -5,52 +5,40 @@ format: revealjs
 slide-number: c/t
 ---
 
-## Problem statement
-We consider the issue of minimizing a penalized, negative loglikelihood
+```{r Loading libraries}
+#| echo: false
 
-$$
-H(\beta) = -\frac{1}{N}\sum_{i=1}^N\left(y_i\log p_i(\beta) + (1-y_i)\log(1-p_i(\beta))\right) + \lambda||f_\beta''||_2^2
-$$
-where
-$$
-\text{logit}(p_i(\beta)) = f(x_i\mid \beta) = \varphi(x_i)^T\beta
-$$
+library(CompStat)
+library(testthat)
+
+```
 
 
-## A matrix derivation of the relevant likelihood{style="font-size: 35%"}
-Consider the negative loglikelihood without penalization
+## A matrix derivation of the relevant likelihood{style="font-size: 50%"}
+Consider the negative loglikelihood
 $$
 H(\beta) =
-- \frac{1}{N}\sum_{i=1}^N y_i \log(p_i(\beta)) + (1-y_i)\log(1-p_i(\beta)) =
-g(p(\beta))
+- \frac{1}{N}\sum_{i=1}^N y_i \log(p_i(\beta)) + (1-y_i)\log(1-p_i(\beta)) + \lambda||f_\beta''||_2^2 :=
+g(p(\beta)) + \lambda||f_\beta''||_2^2
 $$
 with $g: \mathbb{R}^N \rightarrow \mathbb{R}$ and $p: \mathbb{R}^p \rightarrow \mathbb{R}^n$. It holds that
 $$
-D_\beta H(\beta) = D_p(g(p(\beta))) \cdot D_\beta p(\beta)
+D_\beta H(\beta) = D_p(g(p(\beta))) \cdot D_\beta p(\beta) + \lambda D_\beta||f_\beta''||_2^2
 $$
 
 Note that
 $$
-p(\beta) = \frac{e^{X\beta}}{1+e^{X\beta}}
-$$
-Thus
-$$
+p(\beta) = \frac{e^{X\beta}}{1+e^{X\beta}} \\
 D_\beta p(\beta) = \text{diag}\left(\frac{e^{X\beta}}{(1+e^{X\beta})^2}\right)X
 $$
 
 And
 $$
-g(p) = -\frac{1}{N}\textbf{1}^T(y \log(p) + (1-y)\log(1-p))
-$$
-
-Thus
-$$
+g(p) = -\frac{1}{N}\textbf{1}^T(y \log(p) + (1-y)\log(1-p)) \\
 D_pg(p) = -\frac{1}{N}\textbf{1}^T\cdot\text{diag}\left(\frac{y}{p} - \frac{1-y}{1-p}\right)
 $$
 
-
-
-## Penalization {style="font-size: 35%"}
+## Penalization {style="font-size: 50%"}
 For the penalization term
 $$
 ||f''_\beta||_2^2 =
@@ -74,7 +62,70 @@ $$
 D_\beta(\beta^T\Omega\beta) = D_\xi(\xi^T\xi) \cdot D_\beta(\Omega^{1/2}\beta) = 2\xi^T\Omega^{1/2} = 2\beta^T\Omega^{T/2}\Omega^{1/2} = 2\beta^T\Omega
 $$
 
-## On the calculation of $\Omega$ {.smaller}
+## Implementation
+
+```r{code-line-numbers="1-6|8-13|48-55|15-20|22-33|34-46"}
+logistic_loglikelihood <- function(
+    response,
+    design,
+    penalty_matrix = NULL,
+    lambda = 0.001
+){
+
+  if (c("CompStatBasisExpansion") %in% class(design)){
+    penalty_matrix <- design$Omega
+    design <- design$X
+  } else if (is.null(penalty_matrix)){
+    penalty_matrix <- diagmat(rep(1,ncol(design))) # Ordinary L2 Penalty
+  }
+
+  loglikelihood <- function(coef, batch = 1:nrow(design)){
+    eta <- exp(design[batch,] %*% coef)
+    p <- eta / (1 + eta)
+    -mean(response[batch] * log(p) + (1-response[batch]) * log(1-p)) +
+      lambda * t(coef) %*% penalty_matrix %*% coef
+  }
+
+  grad <- function(coef, batch = 1:nrow(design)){
+    X <- design[batch,]
+    y <- response[batch]
+
+    eta <- exp(X %*% coef)
+    p <- eta / (1 + eta)
+    dp <- t(X) %*% diagmat(eta / (1 + eta)^2)
+    dg <-  - (y/p - (1-y)/(1-p)) / length(batch)
+    grad <- dp %*% dg %>% as.vector() + (2 * lambda * penalty_matrix %*% coef)
+    grad %>% as.vector()
+  }
+
+  structure(list(
+    objective = loglikelihood,
+    grad = grad,
+    n_param = nrow(penalty_matrix),
+    n_index = length(response),
+    design = design,
+    response = response,
+    penalty_matrix = penalty_matrix,
+    lambda = lambda
+  ),
+  class = "CompStatOptimizable"
+  )
+}
+
+CompStatBasisExpansion <- function(X, x, Omega, expand_new){
+  structure(list(
+    X = X,
+    x = x,
+    Omega = Omega,
+    expand_new = expand_new
+  ), class = "CompStatBasisExpansion")
+}
+
+#---
+```
+
+
+## Calculating $\Omega$ for a cubic spline basis {.smaller}
 To calculate the penalty matrix, we should evaluate
 $$
 \Omega_{ij} = \int_{-\infty}^{\infty} \varphi_i''(x)\varphi_j''(x)dx = \sum_{m = 1}^{n} \int_{k_{m-1}}^{k_m} \varphi_i''(x)\varphi_j''(x) dx := \sum_{m = 1}^{n} \int_{k_{m-1}}^{k_m} g_{ij}(x) dx
@@ -87,12 +138,282 @@ $$
 $$
 is an exact equality.
 
+## Calculating $\Omega$ for a polynomial basis {.smaller}
+Letting
+
+$$
+\varphi_i(x) = x^i
+$$
+
+For $i,j > 1$ we get
+$$
+\Omega_{ij} = \int_0^1 \varphi_i''(x)\varphi_j''(x)dx = ij(i-1)(j-1)\int_0^1 x^{i+j-4}dx = \frac{ij(i-1)(j-1)}{i+j-3}
+$$
+
+And for $i,j \leq 2$ we get $\Omega_{ij} = 0$.
+
+
 ## Stochastic Optimization Algorithms
-We consider versions of stochastic gradient descent with updates
-$$
-\beta^{(n+1)} = \beta^{(n)} - \rho^{(n)} \nabla H(\beta^{(n)})
-$$
-And corresponding version with minibatches, momentum and Adam.
+We consider three different stochastic gradient descent algorithms, each of
+which share the 'Adam' interface
+
+```r{code-line-numbers="1-16|18-20|22-24|26-40"}
+Adam_Optimizer <- function(
+    lr = 1e-3, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
+    ){
+
+  rho <- 0
+  nu <- 0
+
+  update_param <- function(grad){
+    rho <<- beta_1 * rho + (1-beta_1) * grad
+    nu_proposal <- beta_2 * nu + (1-beta_2) * grad^2
+    nu <<- ifelse(amsgrad, max(nu_proposal, nu), nu_proposal)
+    rho / (sqrt(nu) + eps)
+  }
+
+  CompStatOptimizer(lr, update_param)
+}
+
+Momentum_Optimizer <- function(lr = 1e-3, beta_1 = 0.95){
+  Adam_Optimizer(lr, beta_1 = beta_1, beta_2 = 1, eps = 1)
+}
+
+Vanilla_Optimizer <- function(lr = 1e-3){
+  Adam_Optimizer(lr, beta_1 = 0, beta_2 = 1, eps = 1)
+}
+
+CompStatOptimizer <- function(lr, update_param){
+
+  # Ensure the learning rate is callable
+  if (is.function(lr)){
+    lrate <- lr
+  } else {
+    lrate <- function(epoch) {lr[min(epoch, length(lr))]}
+  }
+
+  structure(list(
+    lr = lrate,
+    update_param = update_param
+  ),
+  class = "CompStatOptimizer")
+}
+
+```
+
+## Assembling a SGD algorithm
+
+```r{code-line-numbers="1-10|12-15|17-27|29-31|33-42|44-52|54-67|69-81|85-97|101-102"}
+SGD <- function(
+    optimizable,
+    optimizer = Vanilla_Optimizer(),
+    init_param = NULL,
+    stop_crit = 50,
+    shuffle = T,
+    batch_size = 1,
+    trace_precision = "batch",
+    ...
+    ){
+
+  # Ensure stopping criterion is valid
+  if (!(class(stop_crit) %in% c("CompStatStoppingCriterion"))){
+    stop_crit <- stopping_criterion(maxiter = stop_crit)
+  }
+
+  # Determine optimizer
+  if (!(class(optimizer) %in% c("CompStatOptimizer"))){
+    opt <-
+      switch(optimizer,
+           "vanilla"= Vanilla_Optimizer(...),
+           "momentum"= Momentum_Optimizer(...),
+           "adam" = Adam_Optimizer(...)
+           )
+  } else {
+    opt <- optimizer
+  }
+
+  # Useful control quantities
+  batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
+  max_total_updates <- batches_per_epoch * stop_crit$maxiter
+
+  # Initialize parameters
+  trace <- CompStatTrace(optimizable)
+
+  if (is.null(init_param)){
+    init_param <- rep(NA, optimizable$n_param)
+  }
+  init_param <- init_param %>% dplyr::coalesce(rnorm(optimizable$n_param))
+  par_next <- init_param
+
+  trace <- extend(trace, init_param)
+
+  for (epoch in 1:stop_crit$maxiter){
+
+    # Reshuffle observations
+    if (shuffle){
+      index_permutation <- sample(
+        optimizable$n_index, optimizable$n_index, replace = F)
+    } else {
+      index_permutation <- 1:optimizable$n_index
+    }
+
+    # Apply minibatch gradient updates
+    for (b in 1:batches_per_epoch){
+
+      par_now <- par_next
+
+      grad <- optimizable$grad(
+        par_now,
+        index_permutation[(1+(b-1)*batch_size):
+                            min(1+b*batch_size, optimizable$n_index)]
+      )
+
+      update <- opt$lr(epoch) * opt$update_param(grad)
+
+      par_next <- par_now - update
+
+      if (trace_precision == "batch"){
+        trace <- trace %>% extend(par_next)
+        if (stop_crit$check(
+          epoch,
+          param = trace %>% tail(1),
+          param_old = trace %>% tail(2),
+          obj = trace %>% tail(1, type = "o"),
+          obj_old = trace %>% tail(2, type = "o")
+          )
+        ){
+          return(trace)
+        }
+      }
+
+    }
+
+    if (trace_precision == "epoch"){
+      trace <- trace %>% extend(par_next)
+      if (stop_crit$check(
+        epoch,
+        param = trace %>% tail(1),
+        param_old = trace %>% tail(2),
+        obj = trace %>% tail(1, type = "o"),
+        obj_old = trace %>% tail(2, type = "o")
+        )
+      ){
+        return(trace)
+      }
+    }
+
+  }
+
+  trace <- trace %>% extend(par_next)
+  return(trace)
+}
+```
+
+## Checking that everything works
+
+```{r Checking that SGD works}
+#| echo: true
+#| code-line-numbers: "2-7|8-19|20-22"
+test_that("sgd converges to the right values ", {
+  set.seed(0)
+  targets <- rnorm(10)
+  init_param <- rnorm(10)
+  sc <- stopping_criterion(maxiter = 250)
+  lr <- polynomial_schedule(0.4, 0.05, K=100, p=1)
+  opt_target <- optimizable_parabola(targets)
+  trace_vanilla <- SGD(
+    opt_target, Vanilla_Optimizer(lr),
+    init_param = init_param, stop_crit = sc
+    )
+  trace_momentum <- SGD(
+    opt_target, Momentum_Optimizer(lr, beta_1 = 0.8),
+    init_param = init_param, stop_crit = sc
+  )
+  trace_adam <- SGD(
+    opt_target, Adam_Optimizer(lr, beta_1 = 0.8),
+    init_param = init_param, stop_crit = sc
+  )
+  expect_equal(max(abs(tail(trace_vanilla, 1) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_momentum, 1) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_adam, 1) - targets)) < 1e-6, TRUE)
+
+  set.seed(NULL)
+})
+```
+
+## Visualizing the results
+
+```{r Checking that SDG works with plots}
+set.seed(0)
+targets <- rnorm(10)
+init_param <- rnorm(10)
+sc <- stopping_criterion(maxiter = 250)
+lr <- polynomial_schedule(0.4, 0.05, K=100, p=1)
+opt_target <- optimizable_parabola(targets)
+trace_vanilla <- SGD(
+  opt_target, Vanilla_Optimizer(lr),
+  init_param = init_param, stop_crit = sc
+  )
+trace_momentum <- SGD(
+  opt_target, Momentum_Optimizer(lr, beta_1 = 0.8),
+  init_param = init_param, stop_crit = sc
+)
+trace_adam <- SGD(
+  opt_target, Adam_Optimizer(lr, beta_1 = 0.8),
+  init_param = init_param, stop_crit = sc
+)
+  
+p1 <- trace_vanilla %>% plot() + ggplot2::ggtitle("Vanilla")
+p2 <- trace_momentum %>% plot() + ggplot2::ggtitle("Momentum")
+p3 <- trace_adam %>% plot() + ggplot2::ggtitle("Adam")
+
+gridExtra::grid.arrange(grobs = list(p1, p2, p3), nrow = 2)
+
+set.seed(NULL)
+```
+
+## Applying SGD to the horse data
+
+```{r Applying SGD to horse data}
+
+data("horses")
+design <- horses$Temperature %>% ExpandBspline()
+opt_target <- logistic_loglikelihood(
+  horses$dead,
+  design = design,
+  lambda = 1e-5
+  )
+lr <- polynomial_schedule(1, 0.1, later = 300, p = 20)
+adam <- Adam_Optimizer(lr)
+trace <- SGD(
+  opt_target, adam, init_param = rep(0,opt_target$n_param),
+  stop_crit = 500,
+  batch_size = nrow(horses)/4,
+  trace_precision = "epoch"
+  )
+
+plot(trace)
+
+plot(design, trace %>% tail(1), post_transform = function(x) exp(x) / (1 + exp(x)))
+
+ggplot2::ggplot(horses, ggplot2::aes(x = Temperature, y = dead)) +
+  ggplot2::geom_smooth(method = "loess")
+
+
+```
+
+
+
+
+
+
+## TODO
+- Show off the R implementation of SGD and logistic likelihood - Yes
+- Show off the OO side of things (focus on basis expansions) - Yes
+- Profile the R implementation
+- Show off the C++ implementation
+- Show off the unit tests
+- Benchmark the C++ implementation
 
 ## Benchmark
 

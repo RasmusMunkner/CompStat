@@ -1,15 +1,22 @@
 
-CompStatOptimizer <- function(key, lr, update_param){
+#' Wrapper CompStatOptimizer construction
+#'
+#' @param lr Learning rate schedule. Should be a function or a scalar
+#' @param update_param The update function. Applied to gradients before those
+#' are used in SGD
+#'
+#' @return A CompStatOptimizer
+#' @export
+CompStatOptimizer <- function(lr, update_param){
 
   # Ensure the learning rate is callable
-  if (!is.function(lr)){
-    lrate <- function(epoch) {lr}
-  } else {
+  if (is.function(lr)){
     lrate <- lr
+  } else {
+    lrate <- function(epoch) {lr[min(epoch, length(lr))]}
   }
 
   structure(list(
-    key = key,
     lr = lrate,
     update_param = update_param
   ),
@@ -23,62 +30,44 @@ CompStatOptimizer <- function(key, lr, update_param){
 #' @param beta_2 Second-moment parameter
 #' @param eps Stability parameter. Only used to avoid division by 0
 #'
-#' @return A CompStatOptimizer with key 'Adam'
+#' @return A CompStatOptimizer
 #' @export
-Adam_Optimizer <- function(lr = 1e-3, beta_1 = 0.98, beta_2 = 0.999, eps = 1e-8, ...){
+Adam_Optimizer <- function(
+    lr = 1e-3, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
+    ){
 
   rho <- 0
   nu <- 0
 
   update_param <- function(grad){
     rho <<- beta_1 * rho + (1-beta_1) * grad
-    nu <<- beta_2 * nu + (1-beta_2) * grad^2
+    nu_proposal <- beta_2 * nu + (1-beta_2) * grad^2
+    nu <<- ifelse(amsgrad, max(nu_proposal, nu), nu_proposal)
     rho / (sqrt(nu) + eps)
   }
 
-  CompStatOptimizer("Adam", lr, update_param)
+  CompStatOptimizer(lr, update_param)
 
 }
 
-#' Some funny optimizer with more quickly vanishing momentum
+#' Momentum optimizer constructor
 #'
-#' @param lr
-#' @param beta_1
-#' @param beta_2
-#' @param vanish
-#' @param eps
-#' @param ...
+#' @inheritParams Adam_Optimizer
 #'
-#' @return
+#' @return A CompStatOptimizer
 #' @export
-Vanishing_Adam_Optimizer <- function(lr = 1e-3, beta_1 = 0.98, beta_2 = 0.999, vanish = 1e-1, eps = 1e-8, ...){
-
-  rho <- 0
-  nu <- 0
-
-  update_param <- function(grad){
-    rho <<- (grad^2 / (grad^2 + vanish)) * beta_1 * rho + (1-beta_1) * grad
-    nu <<- beta_2 * nu + (1-beta_2) * grad^2
-    rho / (sqrt(nu) + eps)
-  }
-
-  CompStatOptimizer("Vanish", lr, update_param)
-
+Momentum_Optimizer <- function(lr = 1e-3, beta_1 = 0.95){
+  Adam_Optimizer(lr, beta_1 = beta_1, beta_2 = 1, eps = 1)
 }
 
 #' Vanilla/Identity optimizer
 #'
-#' @param lr A CompStatDecaySchedule or a scalar
+#' @inheritParams Adam_Optimizer
 #'
-#' @return A CompStatOptimizer object applying pure gradient upgrades
+#' @return A CompStatOptimizer
 #' @export
-Vanilla_Optimizer <- function(lr = 1e-3, ...){
-
-  update_param <- function(grad){
-    grad
-  }
-
-  CompStatOptimizer("Vanilla", lr, update_param)
+Vanilla_Optimizer <- function(lr = 1e-3){
+  Adam_Optimizer(lr, beta_1 = 0, beta_2 = 1, eps = 1)
 }
 
 

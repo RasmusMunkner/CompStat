@@ -49,8 +49,8 @@ CompStatBasisExpansion <- function(X, x, Omega, expand_new){
 #' }
 #' )
 #' plot(one_hot, rnorm(9))
-plot.CompStatBasisExpansion <- function(BasisExpansion, beta){
-  y <- BasisExpansion$X %*% beta
+plot.CompStatBasisExpansion <- function(BasisExpansion, beta, post_transform = function(x) x){
+  y <- post_transform(BasisExpansion$X %*% beta)
   data.frame(x = BasisExpansion$x, y = y) %>%
     ggplot2::ggplot(ggplot2::aes(x = x, y = y)) +
     ggplot2::geom_line() +
@@ -188,7 +188,7 @@ ExpandPoly <- function(x, degree = 4){
     vandermonde(n = degree) %>% t()
 
   Omega <- outer(0:degree, 0:degree, FUN = function(i,j){
-    ifelse(i + j > 3, i*(i-1)*j*(j-1)/(i + j - 3), 0)
+    ifelse(i > 1 & j > 1, i*(i-1)*j*(j-1)/(i + j - 3), 0)
   })
 
   expand_new <- function(x){

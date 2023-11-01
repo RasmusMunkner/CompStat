@@ -1,6 +1,40 @@
 
 
 
+
+test_that("sgd converges to the right values ", {
+  set.seed(0)
+  targets <- rnorm(10)
+  init_param <- rnorm(10)
+  sc <- stopping_criterion(maxiter = 250)
+  lr <- polynomial_schedule(0.4, 0.05, K=100, p=1)
+  opt_target <- optimizable_parabola(targets)
+  trace_vanilla <- SGD(
+    opt_target, Vanilla_Optimizer(lr),
+    init_param = init_param, stop_crit = sc
+    )
+  trace_momentum <- SGD(
+    opt_target, Momentum_Optimizer(lr, beta_1 = 0.8),
+    init_param = init_param, stop_crit = sc
+  )
+  trace_adam <- SGD(
+    opt_target, Adam_Optimizer(lr, beta_1 = 0.8),
+    init_param = init_param, stop_crit = sc
+  )
+  expect_equal(max(abs(tail(trace_vanilla, 1) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_momentum, 1) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_adam, 1) - targets)) < 1e-6, TRUE)
+
+
+  #trace_vanilla %>% plot()
+  #trace_momentum %>% plot()
+  #trace_adam %>% plot()
+  set.seed(NULL)
+})
+
+
+
+
 test_that("cpp batch gradient results are consistent with r results", {
 
   t <- 20

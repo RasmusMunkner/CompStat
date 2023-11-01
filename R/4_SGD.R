@@ -22,7 +22,7 @@
 #' trace_epoch %>% plot()
 SGD <- function(
     optimizable,
-    optimizer = "vanilla",
+    optimizer = Vanilla_Optimizer(),
     init_param = NULL,
     stop_crit = 50,
     shuffle = T,
@@ -41,6 +41,7 @@ SGD <- function(
     opt <-
       switch(optimizer,
            "vanilla"= Vanilla_Optimizer(...),
+           "momentum"= Momentum_Optimizer(...),
            "adam" = Adam_Optimizer(...)
            )
   } else {
@@ -53,18 +54,21 @@ SGD <- function(
 
   # Initialize parameters
   trace <- CompStatTrace(optimizable)
+
   if (is.null(init_param)){
     init_param <- rep(NA, optimizable$n_param)
   }
   init_param <- init_param %>% dplyr::coalesce(rnorm(optimizable$n_param))
   par_next <- init_param
+
   trace <- extend(trace, init_param)
 
   for (epoch in 1:stop_crit$maxiter){
 
     # Reshuffle observations
     if (shuffle){
-      index_permutation <- sample(optimizable$n_index, optimizable$n_index, replace = F)
+      index_permutation <- sample(
+        optimizable$n_index, optimizable$n_index, replace = F)
     } else {
       index_permutation <- 1:optimizable$n_index
     }
@@ -76,7 +80,8 @@ SGD <- function(
 
       grad <- optimizable$grad(
         par_now,
-        index_permutation[(1+(b-1)*batch_size):min(1+b*batch_size, optimizable$n_index)]
+        index_permutation[(1+(b-1)*batch_size):
+                            min(1+b*batch_size, optimizable$n_index)]
       )
 
       update <- opt$lr(epoch) * opt$update_param(grad)
@@ -85,9 +90,13 @@ SGD <- function(
 
       if (trace_precision == "batch"){
         trace <- trace %>% extend(par_next)
-        if (stop_crit$check(epoch,
-                            param = trace %>% tail(1), param_old = trace %>% tail(2),
-                            obj = trace %>% tail(1, type = "o"), trace %>% tail(2, type = "o"))
+        if (stop_crit$check(
+          epoch,
+          param = trace %>% tail(1),
+          param_old = trace %>% tail(2),
+          obj = trace %>% tail(1, type = "o"),
+          obj_old = trace %>% tail(2, type = "o")
+          )
         ){
           return(trace)
         }
@@ -97,9 +106,13 @@ SGD <- function(
 
     if (trace_precision == "epoch"){
       trace <- trace %>% extend(par_next)
-      if (stop_crit$check(epoch,
-                          param = trace %>% tail(1), param_old = trace %>% tail(2),
-                          obj = trace %>% tail(1, type = "o"), trace %>% tail(2, type = "o"))
+      if (stop_crit$check(
+        epoch,
+        param = trace %>% tail(1),
+        param_old = trace %>% tail(2),
+        obj = trace %>% tail(1, type = "o"),
+        obj_old = trace %>% tail(2, type = "o")
+        )
       ){
         return(trace)
       }
@@ -108,7 +121,6 @@ SGD <- function(
   }
 
   trace <- trace %>% extend(par_next)
-
   return(trace)
 }
 

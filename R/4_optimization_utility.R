@@ -67,7 +67,7 @@ stopping_criterion <- function(
 #'
 #' @param lr_start The initial learning rate
 #' @param lr_later The learning rate after K epochs
-#' @param K A number of epochs
+#' @param later A number of epochs
 #' @param p The power of the decay
 #'
 #' @return An object of class CompStatDecaySchedule.
@@ -75,7 +75,8 @@ stopping_criterion <- function(
 #'
 #' @examples
 #' poly_decay <- polynomial_schedule(1, 0.01)
-polynomial_schedule <- function(lr_start, lr_later, K = 100, p = 1){
+polynomial_schedule <- function(lr_start, lr_later, later = 100, p = 1){
+  K <- later^p * lr_later / (lr_start - lr_later)
   lr_schedule <- function(epoch){
     lr_start / (1 + epoch^p / K)
   }
