@@ -108,7 +108,7 @@ logistic_loglikelihood <- function(
     penalty_matrix = penalty_matrix,
     lambda = lambda
   ),
-  class = "CompStatOptimizable"
+  class = c("CompStatLogisticLogLikelihood", "CompStatOptimizable")
   )
 }
 
@@ -157,22 +157,28 @@ And for $i,j \leq 2$ we get $\Omega_{ij} = 0$.
 We consider three different stochastic gradient descent algorithms, each of
 which share the 'Adam' interface
 
-```r{code-line-numbers="1-16|18-20|22-24|26-40"}
+```r{code-line-numbers="1-3|5-14|16-19|21-22|32-47|24-26|28-30"}
 Adam_Optimizer <- function(
     lr = 1e-3, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
     ){
 
-  rho <- 0
-  nu <- 0
-
   update_param <- function(grad){
     rho <<- beta_1 * rho + (1-beta_1) * grad
     nu_proposal <- beta_2 * nu + (1-beta_2) * grad^2
-    nu <<- ifelse(amsgrad, pmax(nu_proposal, nu), nu_proposal)
+    if (amsgrad){
+      nu <<- pmax(nu_proposal, nu)
+    } else {
+      nu <<- nu_proposal
+    }
     rho / (sqrt(nu) + eps)
   }
 
-  CompStatOptimizer(lr, update_param)
+  reset <- function(){
+    rho <<- 0
+    nu <<- 0
+  }
+
+  CompStatOptimizer(lr, update_param, reset)
 }
 
 Momentum_Optimizer <- function(lr = 1e-3, beta_1 = 0.95){
@@ -183,7 +189,7 @@ Vanilla_Optimizer <- function(lr = 1e-3){
   Adam_Optimizer(lr, beta_1 = 0, beta_2 = 1, eps = 1)
 }
 
-CompStatOptimizer <- function(lr, update_param){
+CompStatOptimizer <- function(lr, update_param, reset){
 
   # Ensure the learning rate is callable
   if (is.function(lr)){
@@ -194,7 +200,8 @@ CompStatOptimizer <- function(lr, update_param){
 
   structure(list(
     lr = lrate,
-    update_param = update_param
+    update_param = update_param,
+    reset = reset
   ),
   class = "CompStatOptimizer")
 }
@@ -203,7 +210,7 @@ CompStatOptimizer <- function(lr, update_param){
 
 ## Assembling a SGD algorithm
 
-```r{code-line-numbers="1-10|12-15|17-27|29-31|33-42|44-52|54-67|69-81|85-97|101-102"}
+```r{code-line-numbers="1-11|13-14|16-19|21-32|34-39|41-47|49-57|60-72|74-86|90-102|106-107"}
 SGD <- function(
     optimizable,
     optimizer = Vanilla_Optimizer(),
@@ -212,8 +219,12 @@ SGD <- function(
     shuffle = T,
     batch_size = 1,
     trace_precision = "batch",
+    seed = NULL,
     ...
     ){
+
+  dqrng::dqRNGkind("Xoroshiro128+")
+  dqrng::dqset.seed(seed)
 
   # Ensure stopping criterion is valid
   if (!(class(stop_crit) %in% c("CompStatStoppingCriterion"))){
@@ -231,6 +242,7 @@ SGD <- function(
   } else {
     opt <- optimizer
   }
+  opt$reset()
 
   # Useful control quantities
   batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
@@ -251,7 +263,7 @@ SGD <- function(
 
     # Reshuffle observations
     if (shuffle){
-      index_permutation <- sample(
+      index_permutation <- dqrng::dqsample.int(
         optimizable$n_index, optimizable$n_index, replace = F)
     } else {
       index_permutation <- 1:optimizable$n_index
@@ -265,7 +277,7 @@ SGD <- function(
       grad <- optimizable$grad(
         par_now,
         index_permutation[(1+(b-1)*batch_size):
-                            min(1+b*batch_size, optimizable$n_index)]
+                            min(b*batch_size, optimizable$n_index)]
       )
 
       update <- opt$lr(epoch) * opt$update_param(grad)
@@ -375,6 +387,7 @@ set.seed(NULL)
 ## Applying SGD to the horse data
 
 ```{r Applying SGD to horse data}
+#| cache: true
 set.seed(0)
 data("horses")
 design <- horses$Temperature %>% ExpandBspline()
@@ -411,7 +424,7 @@ set.seed(NULL)
 
 ```
 
-## Profiling the implementation{.scrollable}
+## Profiling the implementation{.smaller}
 
 ```{r Profiling r SGD}
 #| cache: true
@@ -419,7 +432,7 @@ set.seed(NULL)
 set.seed(0)
 data("horses")
 design <- horses$Temperature %>% ExpandBspline()
-opt_target <- logistic_loglikelihood(
+opt_target_horses <- logistic_loglikelihood(
   horses$dead,
   design = design,
   lambda = 1e-5
@@ -436,41 +449,203 @@ profvis::profvis({
   )
 }, simplify = F)
 
-set.seed(NULL)
 ```
 
-## Profiling without tracing {.scrollable}
+## Profiling without tracing {.smaller}
 
 ```{r Profiling r SGD without tracing}
 #| cache: true
 
-set.seed(0)
-data("horses")
-design <- horses$Temperature %>% ExpandBspline()
-opt_target <- logistic_loglikelihood(
-  horses$dead,
-  design = design,
-  lambda = 1e-5
-  )
-lr <- polynomial_schedule(1, 0.1, later = 300, p = 20) # Rapid decay after 300
-adam <- Adam_Optimizer(lr)
-
 profvis::profvis({
   trace <- SGD(
-  opt_target, adam, init_param = rep(0,opt_target$n_param),
+  opt_target_horses, adam, init_param = rep(0,opt_target$n_param),
   stop_crit = 400,
   batch_size = nrow(horses)/4,
   trace_precision = "none"
   )
 }, simplify = F)
 
-set.seed(NULL)
-
 ```
 
 ## C++ implementation
 
+```cpp{code-line-numbers="1-8|9-17|19-20|22-26|28-34|36-46|48-49|51-52"}
+Rcpp::List SGD_CPP_PRIMITIVE(
+    const arma::mat &design, arma::vec coef, const arma::vec &y,
+    const arma::mat &pen_matrix, const double &lambda,
+    const NumericVector &lr, const int &maxiter, int &batch_size,
+    const double &adam_beta1, const double &adam_beta2, const double &adam_eps,
+    const bool &amsgrad,
+    const int &seed
+){
+  Rcpp::List coef_list (maxiter);
+  arma::vec grad;
+  arma::vec rho = vec(coef.n_elem); rho.zeros();
+  arma::vec nu = vec(coef.n_elem); nu.zeros();
+  batch_size = std::min<int>(y.n_elem, batch_size);
+  int batches_per_epoch = std::ceil(double(y.n_elem) / batch_size);
+  uvec indicies_all, indicies;
+  dqrng::dqRNGkind("Xoroshiro128+");
+  dqrng::dqset_seed(IntegerVector::create(seed)); // Sets the shuffling seed
 
+  for (int i = 0; i < maxiter; i++){
+    indicies_all = as<uvec>(dqrng::dqsample_int(y.n_elem, y.n_elem));
+
+    for (int b = 0; b < batches_per_epoch; b++){
+      indicies = indicies_all.subvec(
+        b * batch_size,
+        std::min<int>((b+1) * batch_size - 1, y.n_elem - 1)
+      );
+
+      grad = lll_gradC(
+        design.rows(indicies),
+        coef,
+        y.elem(indicies),
+        pen_matrix,
+        lambda
+        );
+
+      rho = rho * adam_beta1 + grad * (1 - adam_beta1);
+      if (amsgrad){
+        nu = arma::max(
+          nu * adam_beta2 + pow(grad, 2) * (1 - adam_beta2), nu
+        );
+      } else {
+        nu = nu * adam_beta2 + pow(grad, 2) * (1 - adam_beta2);
+      }
+
+      coef = coef - lr[i] * rho / (sqrt(nu) + adam_eps);
+    }
+
+    coef_list[i] = as<NumericVector>(wrap(coef)); // Breaks mutability of coef
+  }
+
+  return(coef_list);
+}
+```
+
+## Testing consistency
+
+```{r Testing consistency across R and c++}
+#| cache: true
+#| echo: true
+#| code-line-numbers: "3-5|7-14|16-22|24-39"
+test_that("C++ sgd converges to the right value", {
+
+  set.seed(0)
+  t <- 10
+  p <- 8
+
+  targets <- rnorm(p)
+  sll <- simple_logistic_loglikelihood(n = 647, p = p, beta = targets)
+
+  opt_target <- logistic_loglikelihood(
+    design = sll$X, response = sll$y,
+    penalty_matrix = matrix(0, nrow = ncol(sll$X), ncol = ncol(sll$X)),
+    lambda = 0
+  )
+
+  random_coef <- 1:t %>% purrr::map(.f = function(i) rnorm(p))
+
+  epochs <- 50
+  batch_size <- 24
+  lr <- polynomial_schedule(0.1, 0.001, 50)
+  opt <- Adam_Optimizer(
+    lr, beta_1 = 0.9, beta_2 = 0.95, eps = 1e-8, amsgrad = T)
+
+  for (i in 1:t){
+    par_r <- SGD(
+      opt_target, opt, init_param = random_coef[[i]],
+      stop_crit = epochs, batch_size = batch_size, trace_precision = "none",
+      seed = 0
+      ) %>% tail(1)
+
+    par_c <- SGD_CPP(
+      lll = opt_target,
+      init_coef = random_coef[[i]],
+      lr = lr, beta1 = 0.9, beta2 = 0.95, eps = 1e-8, batch_size = batch_size,
+      stop_crit = epochs, amsgrad = T,
+      seed = 0
+    ) %>% tail(1) %>% unlist()
+
+    expect_equal(par_c, par_r)
+  }
+
+  set.seed(NULL)
+})
+```
+
+## Benchmark R vs. C++
+
+```{r R vs cpp benchmark}
+
+trace <- SGD(
+  opt_target_horses, adam, init_param = rep(0,opt_target$n_param),
+  stop_crit = 400,
+  batch_size = floor(nrow(horses)/4),
+  trace_precision = "none"
+  )
+
+microbenchmark::microbenchmark(
+  
+)
+
+```
+
+
+## Benchmarking for non-linear regression
+
+```{r Setting up benchmarks cases}
+
+set.seed(3)
+reg <- univariate_logistic_regression(n = 1)
+plot(reg)
+
+n <- 1e6
+x <- runif(n, -1, 1)
+p <- reg$f_true(x)
+y <- rbinom(n, 1, p)
+
+
+
+targets <- 8:16 %>% purrr::map(.f = function(i){
+  x_spline <- x[1:2^i] %>% ExpandBspline()
+  x_poly <- x[1:2^i] %>% ExpandPoly()
+  list(
+    x_spline = x_spline,
+    x_poly = x_poly,
+    lll_spline = logistic_loglikelihood(y[1:2^i], x_spline, lambda = 0),
+    lll_poly = logistic_loglikelihood(y[1:2^i], x_poly, lambda = 0)
+  )
+})
+
+set.seed(NULL)
+
+```
+
+```{r Benchmarking}
+
+lr <- polynomial_schedule(1, 0.9, later = 500)
+trace <- SGD_CPP(targets[[1]]$lll_spline, seed = 0, stop_crit = 1e4, batch_size = 100)
+
+trace %>% 
+  dplyr::select(obj) %>% 
+  dplyr::mutate(iter = dplyr::row_number()) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = iter, y = obj)) +
+  ggplot2::geom_line()
+
+trace %>% 
+  dplyr::mutate(iter = dplyr::row_number()) %>% 
+  tidyr::pivot_longer(cols = -iter, names_to = "parameter", values_to = "value") %>% 
+  ggplot2::ggplot(ggplot2::aes(x = iter, y = value, color = parameter)) +
+  ggplot2::geom_line()
+
+plot(targets[[1]]$x_spline, trace %>% tail(1) %>% unlist(), post_transform = function(x) exp(x) / (1 + exp(x)))
+
+ggplot2::ggplot(mapping = ggplot2::aes(x = x[1:32768], y = y[1:32768])) +
+  ggplot2::geom_smooth(method = "gam")
+
+```
 
 
 
@@ -479,9 +654,9 @@ set.seed(NULL)
 ## TODO
 - Show off the R implementation of SGD and logistic likelihood - Yes
 - Show off the OO side of things (focus on basis expansions) - Yes
-- Profile the R implementation
-- Show off the C++ implementation
-- Show off the unit tests
+- Profile the R implementation - Yes
+- Show off the C++ implementation - Yes
+- Show off the unit tests - Yes
 - Benchmark the C++ implementation
 
-## Benchmark
+

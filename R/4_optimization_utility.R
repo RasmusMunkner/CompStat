@@ -18,6 +18,7 @@
 stopping_criterion <- function(
     maxiter = 50,
     tol_obj = NULL,
+    threshhold_obj = -Inf,
     norm_obj = function(x) sum(x),
     tol_param = NULL,
     norm_param = function(x) sqrt(sum(x^2))
@@ -28,7 +29,10 @@ stopping_criterion <- function(
     return(maxiter)
   }
 
-  stopper <- function(epoch, param = NULL, param_old = NULL, obj = NULL, obj_old = NULL){
+  stopper <- function(
+    epoch,
+    param = NULL, param_old = NULL,
+    obj = NULL, obj_old = NULL){
 
     # Check maxiter criterion
     if (maxiter <= epoch){
@@ -52,6 +56,14 @@ stopping_criterion <- function(
         }
       }
     }
+
+    # Check if objective is small enough
+    if (!is.null(obj)){
+      if (obj < threshhold_obj){
+        return(TRUE)
+      }
+    }
+
     return(FALSE)
   }
 
@@ -97,137 +109,29 @@ constant_schedule <- function(lr){
   lr_schedule
 }
 
-#' S3 object interface for tracing parameter optimization
+#' Plotting function for CompStatTrace's
 #'
-#' @param trace A list of parameter values obtained during the fitting procedure
-#'
-#' @return An object of type CompStatParameterTrace
-#' @export
-#'
-#' @examples
-#' parabola_optim <- optimizable_parabola(c(0,1,-2))
-#' trace <- GD(parabola_optim, lrate = 0.33)
-CompStatTrace <- function(optimizable){
-  if (!("CompStatOptimizable" %in% class(optimizable))){
-    stop("Can only build CompStateTrace for CompStatOptimizable.")
-  }
-  structure(list(
-    parameter_trace = data.frame(matrix(vector(), 0, optimizable$n_param)) %>%
-      magrittr::set_colnames(paste0("p", 1:optimizable$n_param)),
-    objective_trace = numeric(),
-    grad_trace = data.frame(matrix(vector(), 0, optimizable$n_param)) %>%
-      magrittr::set_colnames(paste0("g", 1:optimizable$n_param)),
-    optimizable = optimizable
-  ), class = "CompStatTrace")
-}
-
-#' Generic method for extending objects
-#'
-#' @param extendable An object implementing an extension method
-#' @param extension A valid extension for the extendable
-#'
-#' @return The extended version of the extendable
-#' @export
-extend <- function(extendable, extension){
-  UseMethod("extend")
-}
-
-#' Convenience function to log new data to trace
-#'
-#' @param trace A CompStatTrace
-#' @param param A new vector of parameters to add to the trace
-#'
-#' @return An updates CompStatTrace
-#' @export
-#'
-#' @examples
-#' parabola <- optimizable_parabola(c(-2,0,1))
-#' trace <- CompStatTrace(parabola)
-#' trace <- trace %>% extend(c(3,2,1)) %>% extend(c(0,2,1)) %>% extend(c(-2,0,1))
-extend.CompStatTrace <- function(trace, param){
-  if (length(param) != trace$optimizable$n_param){
-    stop(paste0("New parameter values must be of the correct length", trace$optimizable$n_param, ")"))
-  }
-  pnames <- colnames(trace$parameter_trace)
-  gnames <- colnames(trace$grad_trace)
-  trace$parameter_trace <- trace$parameter_trace %>%
-    rbind(param, make.row.names = F) %>%
-    magrittr::set_colnames(pnames)
-  trace$objective_trace <- trace$objective_trace %>%
-    append(param %>% trace$optimizable$objective())
-  trace$grad_trace <- trace$grad_trace %>%
-    rbind(param %>% trace$optimizable$grad(), make.row.names = F) %>%
-    magrittr::set_colnames(gnames)
-  return(trace)
-}
-
-#' Plotting method for CompStatParameterTrace
-#'
-#' @param x An object of class 'CompStatParameterTrace'
-#' @param ... Additional arguments passed to ggplot
-#'
-#' @return A ggplot of the parameter traces
-#' @export
-#'
-#' @examples
-#' parabola_optim <- optimizable_parabola(c(0,1,-2))
-#' trace <- just_screw_around(parabola_optim)
-#' trace %>% plot(type = "p")
-#'
-plot.CompStatTrace <- function(trace, type = "p"){
-  if (type == "p"){
-    trace$parameter_trace %>%
-      dplyr::mutate(Iteration = dplyr::row_number()) %>%
-      tidyr::pivot_longer(cols = -Iteration, names_to = "Parameter", values_to = "Value", names_ptypes = factor()) %>%
-      ggplot2::ggplot(ggplot2::aes(x = Iteration, y = Value, color = Parameter)) +
-      ggplot2::geom_line()
-  } else if (type == "o") {
-    trace$objective_trace %>%
-      tibble::tibble() %>%
-      magrittr::set_colnames("Objective") %>%
-      dplyr::mutate(Iteration = dplyr::row_number()) %>%
-      tidyr::pivot_longer(cols = -Iteration, names_to = "Parameter", values_to = "Value") %>%
-      ggplot2::ggplot(ggplot2::aes(x = Iteration, y = Value, color = Parameter)) +
-      ggplot2::geom_line()
-  }
-}
-
-#' Print method for CompStatParameterTrace
-#'
-#' @param trace A CompStatTrace
-#' @param ... Additional arguments passed to print.default
-#'
-#' @return Prints a summary of the parameter trace
-#' @export
-#'
-#' @examples
-print.CompStatTrace <- function(trace, ...){
-  print("---CompStatTrace---", quote=F)
-  print("Final Parameters:", quote=F)
-  print(trace$parameter_trace %>% tail(1), ...)
-  print("Final Objective:", quote=F)
-  print(trace$objective_trace %>% tail(1), ...)
-}
-
-#' Extract the most recent parameters for a CompStatTrace
-#'
-#' @param trace A CompStatTrace
+#' @param trace A matrix with columns p1-pp and obj.
 #'
 #' @return
 #' @export
-#'
-#' @examples
-#' parabola_optim <- optimizable_parabola(c(0,1,-2))
-#' trace <- just_screw_around(parabola_optim, maxiter = 5)
-#' trace %>% tail()
-#' trace %>% tail(2)
-#' trace %>% tail(type = "o")
-tail.CompStatTrace <- function(trace, n = 1, type = "p"){
-  if (type == "p"){
-    trace$parameter_trace %>% `[`(nrow(.) - n + 1,) %>% unlist()
-  } else if (type == "o"){
-    trace$objective_trace %>% .subset2(length(.) - n + 1)
-  }
+plot.CompStatTrace <- function(trace){
+  plotdata <-
+  trace %>%
+    as.data.frame() %>%
+    dplyr::mutate(Iteration = dplyr::row_number())
+  p1 <- plotdata %>%
+    dplyr::select(-obj) %>%
+    tidyr::pivot_longer(cols = -Iteration, names_to = "Parameter", values_to = "Value") %>%
+    ggplot2::ggplot(ggplot2::aes(x = Iteration, y = Value, color = Parameter)) +
+    ggplot2::geom_line() +
+    ggplot2::ggtitle("Parameters")
+  p2 <- plotdata %>%
+    ggplot2::ggplot(ggplot2::aes(x = Iteration, y = obj)) +
+    ggplot2::geom_line() +
+    ggplot2::labs(x = "Iteration", y = "Objective") +
+    ggplot2::ggtitle("Objective Function")
+  gridExtra::grid.arrange(grobs = list(p1, p2), ncol = 2)
 }
 
 #' Generic wrapper around CompStatOptimizable creation
@@ -315,6 +219,79 @@ simple_logistic_loglikelihood_optimizable <- function(n = 10, p = 2, beta = 1:p)
     lambda = 0
   )
 }
+
+#' Builds a univariate logistic regression dataset along with the
+#' regression function.
+#'
+#' @param n The number of observations
+#'
+#' @return A list containing a covariate x, a binary response y and a function
+#' f_true(x) = E[Y|X=x].
+#' @export
+#'
+#' @examples
+#' reg <- univariate_logistic_regression(10)
+univariate_logistic_regression <- function(
+    n = 1000, depth = 6, width = 10, mean = 0, sd = 2/3
+    ){
+
+  x <- runif(n, -1, 1)
+
+  NN <- function(x, layers){
+    x <- t(x)
+    for (i in seq_along(layers)){
+      linmap <- layers[[i]] %*% x
+      if (i == length(layers)){
+        x <-  exp(linmap) / (1+exp(linmap))
+      } else {
+        x <- tanh(linmap)
+      }
+    }
+    x
+  }
+
+  make_nn_layers <- function(
+    depth, width, mean, sd
+    ){
+    1:depth %>% purrr::map(.f = function(d){
+      col <- ifelse(d == 1, 1, width)
+      row <- ifelse(d == depth, 1, width)
+      matrix(rnorm(row * col, mean, sd), nrow = row, ncol = col)
+    })
+  }
+
+  layers <- make_nn_layers(depth, width, mean, sd)
+  p <- NN(x, layers)
+  attributes(p) <- NULL
+  y <- rbinom(n, 1, p)
+
+  return(structure(list(
+    x = x,
+    y = y,
+    f_true = function(x) {NN(x,layers) %>% t()}
+  ), class = "CompStatRegression"))
+}
+
+#' Plotting function for CompStatRegression
+#'
+#' @param reg A CompStatRegression
+#'
+#' @export
+#'
+#' @examples
+#' reg <- univariate_logistic_regression(100, sd = 2/3, depth = 6)
+#' plot(reg)
+plot.CompStatRegression <- function(reg){
+  x <- seq(-1,1,0.001)
+  y <- reg$f_true(x)
+  data.frame(x = x, y = y) %>%
+    ggplot2::ggplot(ggplot2::aes(x = x, y = y)) +
+    ggplot2::geom_line() +
+    ggplot2::lims(x = c(-1,1)) +
+    ggplot2::labs(x = "x", y = "p(y=1|X=x)")
+}
+
+
 
 #' Build a random trace
 #'

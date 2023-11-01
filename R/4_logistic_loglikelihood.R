@@ -24,7 +24,7 @@ logistic_loglikelihood <- function(
     response,
     design,
     penalty_matrix = NULL,
-    lambda = 0.001
+    lambda = 1e-5
 ){
 
   if (c("CompStatBasisExpansion") %in% class(design)){
@@ -42,7 +42,7 @@ logistic_loglikelihood <- function(
   }
 
   grad <- function(coef, batch = 1:nrow(design)){
-    X <- design[batch,]
+    X <- design[batch,, drop=F]
     y <- response[batch]
 
     eta <- exp(X %*% coef)

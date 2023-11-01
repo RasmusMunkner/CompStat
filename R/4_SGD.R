@@ -14,11 +14,9 @@
 #' @export
 #'
 #' @examples
-#' parabola_optim <- optimizable_parabola(c(0,1,-2))
-#' negloglik <- logistic_opfun <- make_logistic_loglikelihood()
-#' trace_batch <- SGD(negloglik, lr = 1e-4, batch_size = 100, trace_precision = "batch")
-#' trace_epoch <- SGD(negloglik, lr = 1e-4, batch_size = 100, trace_precision = "epoch")
-#' trace_batch %>% plot()
+#' negloglik <- logistic_loglikelihood(response = horses$dead, design = horses$Temperature %>% ExpandBspline())
+#' trace_simple <- SGD(negloglik, Vanilla_Optimizer(0.1), batch_size = 100, tracing = F, stop_crit = 150, seed = 0)
+#' trace_epoch <- SGD(negloglik, Vanilla_Optimizer(0.1), stop_crit = 1e2, seed = 0)
 #' trace_epoch %>% plot()
 SGD <- function(
     optimizable,
@@ -27,12 +25,13 @@ SGD <- function(
     stop_crit = 50,
     shuffle = T,
     batch_size = 1,
-    trace_precision = "batch",
+    tracing = T,
+    objtarget = -Inf,
     seed = NULL,
     ...
     ){
 
-  dqRNGkind("Xoroshiro128+")
+  dqrng::dqRNGkind("Xoroshiro128+")
   dqrng::dqset.seed(seed)
 
   # Ensure stopping criterion is valid
@@ -58,26 +57,28 @@ SGD <- function(
   max_total_updates <- batches_per_epoch * stop_crit$maxiter
 
   # Initialize parameters
-  trace <- CompStatTrace(optimizable)
 
   if (is.null(init_param)){
-    init_param <- rep(NA, optimizable$n_param)
+    init_param <- rep(0, optimizable$n_param)
   }
-  init_param <- init_param %>% dplyr::coalesce(rnorm(optimizable$n_param))
+  init_param <- init_param %>% dplyr::coalesce(0)
   par_next <- init_param
 
-  trace <- extend(trace, init_param)
+  trace <- matrix(
+    NA, nrow = (stop_crit$maxiter+1), ncol = optimizable$n_param + 1)
+  trace[1,] <- c(par_next, optimizable$objective(par_next))
 
   for (epoch in 1:stop_crit$maxiter){
 
     # Reshuffle observations
     if (shuffle){
-      index_permutation <- dqsample.int(
+      index_permutation <- dqrng::dqsample.int(
         optimizable$n_index, optimizable$n_index, replace = F)
     } else {
       index_permutation <- 1:optimizable$n_index
     }
 
+    par_before <- par_next
     # Apply minibatch gradient updates
     for (b in 1:batches_per_epoch){
 
@@ -92,41 +93,38 @@ SGD <- function(
       update <- opt$lr(epoch) * opt$update_param(grad)
 
       par_next <- par_now - update
+    }
 
-      if (trace_precision == "batch"){
-        trace <- trace %>% extend(par_next)
-        if (stop_crit$check(
-          epoch,
-          param = trace %>% tail(1),
-          param_old = trace %>% tail(2),
-          obj = trace %>% tail(1, type = "o"),
-          obj_old = trace %>% tail(2, type = "o")
-          )
-        ){
-          return(trace)
+    if (tracing == T){
+      trace[epoch+1,] <- c(par_next, optimizable$objective(par_next))
+    }
+
+    if (stop_crit$check(
+      epoch,
+      param = par_next,
+      param_old = par_before,
+      obj = optimizable$objective(par_next),
+      obj_old = optimizable$objective(par_before)
+    )
+    ){
+      return(
+        if (tracing){
+          trace %>%
+            magrittr::set_colnames(c(paste0("p", 1:optimizable$n_param), "obj")) %>%
+            magrittr::set_class(c("CompStatTrace", class(.))) %>%
+            return()
+        } else {
+          c(par_next, optimizable$objective(par_next)) %>%
+            matrix(nrow = 1) %>%
+            magrittr::set_colnames(c(paste0("p", 1:optimizable$n_param), "obj")) %>%
+            return()
         }
-      }
 
+      )
     }
-
-    if (trace_precision == "epoch"){
-      trace <- trace %>% extend(par_next)
-      if (stop_crit$check(
-        epoch,
-        param = trace %>% tail(1),
-        param_old = trace %>% tail(2),
-        obj = trace %>% tail(1, type = "o"),
-        obj_old = trace %>% tail(2, type = "o")
-        )
-      ){
-        return(trace)
-      }
-    }
-
   }
 
-  trace <- trace %>% extend(par_next)
-  return(trace)
+  stop("An error with maxiter occured. SGD should call return from within the iteration loop.")
 }
 
 #' Wrapper function for cpp sgd for the logistic loglikelihood
@@ -169,9 +167,9 @@ SGD <- function(
 #' ggplot2::ggplot(ggplot2::aes(x = iter, y = value, color = coef)) +
 #' ggplot2::geom_line()
 SGD_CPP <- function(
-    lll, init_coef,
+    lll, init_coef = NULL,
     lr = 1e-3, beta1 = 0.9, beta2 = 0.95, eps = 1e-8, batch_size = 32,
-    stop_crit = 50,
+    stop_crit = 50, objtarget = 0,
     disable_adam = F, amsgrad = T,
     seed = NULL
     ){
@@ -200,6 +198,10 @@ SGD_CPP <- function(
     lrate <- lr(1:stop_crit$maxiter)
   }
 
+  if (is.null(init_coef)){
+    init_coef <- rnorm(ncol(design))
+  }
+
 
   if (disable_adam){
     beta1 <- 0
@@ -207,7 +209,7 @@ SGD_CPP <- function(
     eps <- 1
   }
 
-  coef_trace <- SGD_CPP_PRIMITIVE(
+  trace <- SGD_CPP_PRIMITIVE(
     design = design,
     coef = init_coef,
     y = y,
@@ -220,11 +222,13 @@ SGD_CPP <- function(
     adam_beta2 = beta2,
     adam_eps = eps,
     amsgrad = amsgrad,
-    seed = seed
-    ) %>%
-    purrr::map_dfr(.f = function(x) x %>% as.vector() %>% setNames(paste0("p", seq_along(init_coef))))
+    seed = seed,
+    objtarget = objtarget
+    )
 
-  return(coef_trace)
+  trace[[1]] %>%
+    purrr::map_dfr(.f = function(x) x %>% as.vector() %>% setNames(paste0("p", seq_along(init_coef)))) %>%
+    cbind(data.frame(obj = trace[[2]] %>% unlist(use.names = F)))
 
 }
 

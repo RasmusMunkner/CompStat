@@ -90,9 +90,9 @@ poisson_prior_approximation <- function(
 #'
 #' @examples
 #' poisson_prior_log_f_approx(seq(0.001, 1, 0.001))
-poisson_prior_log_f_approx <- function(y, breaks = c(0,1,2,3,4), orders = 4){
+poisson_prior_log_f_approx <- function(y, breaks = c(0,1,2,3,4), K = 4){
   term1 <- y*xz_poisson_prior
-  exp_approx <- colSums(vandermonde(y, maxpow) * polycoef(maxpow))
+  exp_approx <- colSums(vandermonde(y, K) * polycoef(K))
   term2 <- exp(y*x_poisson_mean) * exp_approx
   term1 - term2
 }
@@ -143,10 +143,10 @@ poisson_prior_log_f_prime <- function(y){
 #' ggplot2::geom_point()
 benchmark_poisson_prior_densities <- function(N_seq = 3:12, rg = c(0.0001, 1)){
 
-  ppa_nogroup <- poisson_prior_approximation(breaks = c(0,4), order = 8)
-  ppa_base <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), order = 8)
-  ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), order = 4)
-  ppa_inaccurate <- poisson_prior_approximation(breaks = c(0, 4), order = 4)
+  ppa_nogroup <- poisson_prior_approximation(breaks = c(0,4), K = 8)
+  ppa_base <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), K = 8)
+  ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), K = 4)
+  ppa_inaccurate <- poisson_prior_approximation(breaks = c(0, 4), K = 4)
 
   bm <- N_seq %>%
     purrr::imap_dfr(.f = function(N, i){

@@ -54,7 +54,6 @@ Adam_Optimizer <- function(
   }
 
   CompStatOptimizer(lr, update_param, reset)
-
 }
 
 #' Momentum optimizer constructor

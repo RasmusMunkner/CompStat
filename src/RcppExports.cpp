@@ -27,8 +27,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // SGD_CPP_PRIMITIVE
-Rcpp::List SGD_CPP_PRIMITIVE(const arma::mat& design, arma::vec coef, const arma::vec& y, const arma::mat& pen_matrix, const double& lambda, const NumericVector& lr, const int& maxiter, int& batch_size, const double& adam_beta1, const double& adam_beta2, const double& adam_eps, const bool& amsgrad, const int& seed);
-RcppExport SEXP _CompStat_SGD_CPP_PRIMITIVE(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP, SEXP lrSEXP, SEXP maxiterSEXP, SEXP batch_sizeSEXP, SEXP adam_beta1SEXP, SEXP adam_beta2SEXP, SEXP adam_epsSEXP, SEXP amsgradSEXP, SEXP seedSEXP) {
+Rcpp::List SGD_CPP_PRIMITIVE(const arma::mat& design, arma::vec coef, const arma::vec& y, const arma::mat& pen_matrix, const double& lambda, const NumericVector& lr, const int& maxiter, int& batch_size, const double& adam_beta1, const double& adam_beta2, const double& adam_eps, const bool& amsgrad, const int& seed, const double& objtarget);
+RcppExport SEXP _CompStat_SGD_CPP_PRIMITIVE(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP, SEXP lrSEXP, SEXP maxiterSEXP, SEXP batch_sizeSEXP, SEXP adam_beta1SEXP, SEXP adam_beta2SEXP, SEXP adam_epsSEXP, SEXP amsgradSEXP, SEXP seedSEXP, SEXP objtargetSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -45,7 +45,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const double& >::type adam_eps(adam_epsSEXP);
     Rcpp::traits::input_parameter< const bool& >::type amsgrad(amsgradSEXP);
     Rcpp::traits::input_parameter< const int& >::type seed(seedSEXP);
-    rcpp_result_gen = Rcpp::wrap(SGD_CPP_PRIMITIVE(design, coef, y, pen_matrix, lambda, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps, amsgrad, seed));
+    Rcpp::traits::input_parameter< const double& >::type objtarget(objtargetSEXP);
+    rcpp_result_gen = Rcpp::wrap(SGD_CPP_PRIMITIVE(design, coef, y, pen_matrix, lambda, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps, amsgrad, seed, objtarget));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -102,7 +103,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_CompStat_lll_gradC", (DL_FUNC) &_CompStat_lll_gradC, 5},
-    {"_CompStat_SGD_CPP_PRIMITIVE", (DL_FUNC) &_CompStat_SGD_CPP_PRIMITIVE, 13},
+    {"_CompStat_SGD_CPP_PRIMITIVE", (DL_FUNC) &_CompStat_SGD_CPP_PRIMITIVE, 14},
     {"_CompStat_epanechnikov_l2norm_runningC", (DL_FUNC) &_CompStat_epanechnikov_l2norm_runningC, 2},
     {"_CompStat_eval_kdensC", (DL_FUNC) &_CompStat_eval_kdensC, 4},
     {"_CompStat_vmC", (DL_FUNC) &_CompStat_vmC, 2},

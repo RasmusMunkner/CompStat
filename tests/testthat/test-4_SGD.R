@@ -22,10 +22,6 @@ test_that("sgd converges to the right values ", {
   expect_equal(max(abs(tail(trace_momentum, 1) - targets)) < 1e-6, TRUE)
   expect_equal(max(abs(tail(trace_adam, 1) - targets)) < 1e-6, TRUE)
 
-
-  #trace_vanilla %>% plot()
-  #trace_momentum %>% plot()
-  #trace_adam %>% plot()
   set.seed(NULL)
 })
 
@@ -46,7 +42,9 @@ test_that("cpp batch gradient results are consistent with r results", {
 
   for (i in 1:t){
     expect_equal(
-      lll_gradC(sll$X, random_coef[[i]], sll$y, optfun_loglik$penalty_matrix, 0) %>% as.vector(),
+      lll_gradC(
+        sll$X, random_coef[[i]], sll$y, optfun_loglik$penalty_matrix, 0) %>%
+        as.vector(),
       optfun_loglik$grad(random_coef[[i]])
       )
   }
@@ -73,7 +71,8 @@ test_that("C++ sgd converges to the right value", {
   epochs <- 50
   batch_size <- 24
   lr <- polynomial_schedule(0.1, 0.001, 50)
-  opt <- Adam_Optimizer(lr, beta_1 = 0.9, beta_2 = 0.95, eps = 1e-8, amsgrad = T)
+  opt <- Adam_Optimizer(
+    lr, beta_1 = 0.9, beta_2 = 0.95, eps = 1e-8, amsgrad = T)
 
   for (i in 1:t){
     par_r <- SGD(

@@ -18,10 +18,21 @@ arma::vec lll_gradC(
   arma::vec eta = exp(design * coef);
   arma::vec p = eta / (1 + eta);
   arma::mat dp = arma::diagmat(eta / pow((1 + eta), 2)) * design;
-  //double g = - arma::accu(y % log(p) + (1 - y) % log(1-p)) / N;
   arma::vec dg = - (y / p - (1 - y) / (1 - p)) / N;
   arma::vec grad = dp.t() * dg + 2 * lambda * pen_matrix * coef;
   return(grad);
+}
+
+[[Rcpp::exports]]
+double lllC(
+    const arma::mat &design, const arma::vec &coef, const arma::vec &y,
+    const arma::mat &pen_matrix, const double &lambda
+){
+  double N = y.n_elem;
+  arma::vec eta = exp(design * coef);
+  arma::vec p = eta / (1 + eta);
+  arma::mat g = - arma::accu(y % log(p) + (1 - y) % log(1-p)) / N + lambda * coef.t() * pen_matrix * coef;
+  return(arma::accu(g)); // Call to accu is just for type conversion
 }
 
 // The follow function is a full cpp implementation of SGD for the logistic regression
@@ -32,11 +43,12 @@ Rcpp::List SGD_CPP_PRIMITIVE(
     const NumericVector &lr, const int &maxiter, int &batch_size,
     const double &adam_beta1, const double &adam_beta2, const double &adam_eps,
     const bool &amsgrad,
-    const int &seed
+    const int &seed,
+    const double &objtarget
 ){
-  NumericVector objs (maxiter);
-  Rcpp::List grads (maxiter);
   Rcpp::List coef_list (maxiter);
+  Rcpp::List obj_list (maxiter);
+  double obj;
   arma::vec grad;
   arma::vec rho = vec(coef.n_elem); rho.zeros();
   arma::vec nu = vec(coef.n_elem); nu.zeros();
@@ -76,9 +88,25 @@ Rcpp::List SGD_CPP_PRIMITIVE(
     }
 
     coef_list[i] = as<NumericVector>(wrap(coef)); // Breaks mutability of coef
+    obj = lllC(
+      design,
+      coef,
+      y,
+      pen_matrix,
+      lambda
+    );
+    obj_list[i] = 1 * obj;
+
+    if (obj < objtarget){
+      break;
+    }
   }
 
-  return(coef_list);
+  Rcpp::List results (2);
+  results[0] = coef_list;
+  results[1] = obj_list;
+
+  return(results);
 }
 
 
