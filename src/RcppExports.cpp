@@ -11,39 +11,41 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
-// batch_gradient
-arma::vec batch_gradient(arma::mat design, arma::vec coef, arma::vec y, arma::mat pen_matrix, double lambda);
-RcppExport SEXP _CompStat_batch_gradient(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP) {
+// lll_gradC
+arma::vec lll_gradC(const arma::mat& design, const arma::vec& coef, const arma::vec& y, const arma::mat& pen_matrix, const double& lambda);
+RcppExport SEXP _CompStat_lll_gradC(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< arma::mat >::type design(designSEXP);
-    Rcpp::traits::input_parameter< arma::vec >::type coef(coefSEXP);
-    Rcpp::traits::input_parameter< arma::vec >::type y(ySEXP);
-    Rcpp::traits::input_parameter< arma::mat >::type pen_matrix(pen_matrixSEXP);
-    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
-    rcpp_result_gen = Rcpp::wrap(batch_gradient(design, coef, y, pen_matrix, lambda));
+    Rcpp::traits::input_parameter< const arma::mat& >::type design(designSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type coef(coefSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type pen_matrix(pen_matrixSEXP);
+    Rcpp::traits::input_parameter< const double& >::type lambda(lambdaSEXP);
+    rcpp_result_gen = Rcpp::wrap(lll_gradC(design, coef, y, pen_matrix, lambda));
     return rcpp_result_gen;
 END_RCPP
 }
-// SGD_CPP
-Rcpp::List SGD_CPP(arma::mat design, arma::vec coef, arma::vec y, arma::mat pen_matrix, double lambda, NumericVector lr, int maxiter, int batch_size, double adam_beta1, double adam_beta2, double adam_eps);
-RcppExport SEXP _CompStat_SGD_CPP(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP, SEXP lrSEXP, SEXP maxiterSEXP, SEXP batch_sizeSEXP, SEXP adam_beta1SEXP, SEXP adam_beta2SEXP, SEXP adam_epsSEXP) {
+// SGD_CPP_PRIMITIVE
+Rcpp::List SGD_CPP_PRIMITIVE(const arma::mat& design, arma::vec coef, const arma::vec& y, const arma::mat& pen_matrix, const double& lambda, const NumericVector& lr, const int& maxiter, int& batch_size, const double& adam_beta1, const double& adam_beta2, const double& adam_eps, const bool& amsgrad, const int& seed);
+RcppExport SEXP _CompStat_SGD_CPP_PRIMITIVE(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP, SEXP lrSEXP, SEXP maxiterSEXP, SEXP batch_sizeSEXP, SEXP adam_beta1SEXP, SEXP adam_beta2SEXP, SEXP adam_epsSEXP, SEXP amsgradSEXP, SEXP seedSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< arma::mat >::type design(designSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type design(designSEXP);
     Rcpp::traits::input_parameter< arma::vec >::type coef(coefSEXP);
-    Rcpp::traits::input_parameter< arma::vec >::type y(ySEXP);
-    Rcpp::traits::input_parameter< arma::mat >::type pen_matrix(pen_matrixSEXP);
-    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type lr(lrSEXP);
-    Rcpp::traits::input_parameter< int >::type maxiter(maxiterSEXP);
-    Rcpp::traits::input_parameter< int >::type batch_size(batch_sizeSEXP);
-    Rcpp::traits::input_parameter< double >::type adam_beta1(adam_beta1SEXP);
-    Rcpp::traits::input_parameter< double >::type adam_beta2(adam_beta2SEXP);
-    Rcpp::traits::input_parameter< double >::type adam_eps(adam_epsSEXP);
-    rcpp_result_gen = Rcpp::wrap(SGD_CPP(design, coef, y, pen_matrix, lambda, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps));
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type pen_matrix(pen_matrixSEXP);
+    Rcpp::traits::input_parameter< const double& >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type lr(lrSEXP);
+    Rcpp::traits::input_parameter< const int& >::type maxiter(maxiterSEXP);
+    Rcpp::traits::input_parameter< int& >::type batch_size(batch_sizeSEXP);
+    Rcpp::traits::input_parameter< const double& >::type adam_beta1(adam_beta1SEXP);
+    Rcpp::traits::input_parameter< const double& >::type adam_beta2(adam_beta2SEXP);
+    Rcpp::traits::input_parameter< const double& >::type adam_eps(adam_epsSEXP);
+    Rcpp::traits::input_parameter< const bool& >::type amsgrad(amsgradSEXP);
+    Rcpp::traits::input_parameter< const int& >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(SGD_CPP_PRIMITIVE(design, coef, y, pen_matrix, lambda, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps, amsgrad, seed));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -99,8 +101,8 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_CompStat_batch_gradient", (DL_FUNC) &_CompStat_batch_gradient, 5},
-    {"_CompStat_SGD_CPP", (DL_FUNC) &_CompStat_SGD_CPP, 11},
+    {"_CompStat_lll_gradC", (DL_FUNC) &_CompStat_lll_gradC, 5},
+    {"_CompStat_SGD_CPP_PRIMITIVE", (DL_FUNC) &_CompStat_SGD_CPP_PRIMITIVE, 13},
     {"_CompStat_epanechnikov_l2norm_runningC", (DL_FUNC) &_CompStat_epanechnikov_l2norm_runningC, 2},
     {"_CompStat_eval_kdensC", (DL_FUNC) &_CompStat_eval_kdensC, 4},
     {"_CompStat_vmC", (DL_FUNC) &_CompStat_vmC, 2},

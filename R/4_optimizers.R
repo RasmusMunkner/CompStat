@@ -7,7 +7,7 @@
 #'
 #' @return A CompStatOptimizer
 #' @export
-CompStatOptimizer <- function(lr, update_param){
+CompStatOptimizer <- function(lr, update_param, reset){
 
   # Ensure the learning rate is callable
   if (is.function(lr)){
@@ -18,7 +18,8 @@ CompStatOptimizer <- function(lr, update_param){
 
   structure(list(
     lr = lrate,
-    update_param = update_param
+    update_param = update_param,
+    reset = reset
   ),
   class = "CompStatOptimizer")
 }
@@ -36,17 +37,23 @@ Adam_Optimizer <- function(
     lr = 1e-3, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
     ){
 
-  rho <- 0
-  nu <- 0
-
   update_param <- function(grad){
     rho <<- beta_1 * rho + (1-beta_1) * grad
     nu_proposal <- beta_2 * nu + (1-beta_2) * grad^2
-    nu <<- ifelse(amsgrad, max(nu_proposal, nu), nu_proposal)
+    if (amsgrad){
+      nu <<- pmax(nu_proposal, nu)
+    } else {
+      nu <<- nu_proposal
+    }
     rho / (sqrt(nu) + eps)
   }
 
-  CompStatOptimizer(lr, update_param)
+  reset <- function(){
+    rho <<- 0
+    nu <<- 0
+  }
+
+  CompStatOptimizer(lr, update_param, reset)
 
 }
 

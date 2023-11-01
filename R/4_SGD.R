@@ -28,8 +28,12 @@ SGD <- function(
     shuffle = T,
     batch_size = 1,
     trace_precision = "batch",
+    seed = NULL,
     ...
     ){
+
+  dqRNGkind("Xoroshiro128+")
+  dqrng::dqset.seed(seed)
 
   # Ensure stopping criterion is valid
   if (!(class(stop_crit) %in% c("CompStatStoppingCriterion"))){
@@ -47,6 +51,7 @@ SGD <- function(
   } else {
     opt <- optimizer
   }
+  opt$reset()
 
   # Useful control quantities
   batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
@@ -67,7 +72,7 @@ SGD <- function(
 
     # Reshuffle observations
     if (shuffle){
-      index_permutation <- sample(
+      index_permutation <- dqsample.int(
         optimizable$n_index, optimizable$n_index, replace = F)
     } else {
       index_permutation <- 1:optimizable$n_index
@@ -81,7 +86,7 @@ SGD <- function(
       grad <- optimizable$grad(
         par_now,
         index_permutation[(1+(b-1)*batch_size):
-                            min(1+b*batch_size, optimizable$n_index)]
+                            min(b*batch_size, optimizable$n_index)]
       )
 
       update <- opt$lr(epoch) * opt$update_param(grad)
@@ -163,14 +168,22 @@ SGD <- function(
 #' tidyr::pivot_longer(cols = -iter, names_to = "coef", values_to = "value") %>%
 #' ggplot2::ggplot(ggplot2::aes(x = iter, y = value, color = coef)) +
 #' ggplot2::geom_line()
-SGC_CPP_Wrapper <- function(
-    design, init_coef, y,
-    pen_matrix = matrix(0, nrow = ncol(design), ncol = ncol(design)),
-    lambda = 0.001,
+SGD_CPP <- function(
+    lll, init_coef,
     lr = 1e-3, beta1 = 0.9, beta2 = 0.95, eps = 1e-8, batch_size = 32,
     stop_crit = 50,
-    disable_adam = T
+    disable_adam = F, amsgrad = T,
+    seed = NULL
     ){
+
+  if (!("CompStatLogisticLogLikelihood" %in% class(lll))){
+    stop(paste0("Input lll must be of class 'CompStatLogisticLogLikelihood'."))
+  } else {
+    design <- lll$design
+    pen_matrix <- lll$penalty_matrix
+    lambda <- lll$lambda
+    y <- lll$response
+  }
 
   stop_crit <- stopping_criterion(stop_crit)
   if (!is.function(lr)){
@@ -194,16 +207,20 @@ SGC_CPP_Wrapper <- function(
     eps <- 1
   }
 
-  coef_trace <- SGD_CPP(
+  coef_trace <- SGD_CPP_PRIMITIVE(
     design = design,
     coef = init_coef,
     y = y,
     lr = lrate,
+    pen_matrix = pen_matrix,
+    lambda = lambda,
     maxiter = stop_crit$maxiter,
     batch_size = batch_size,
     adam_beta1 = beta1,
     adam_beta2 = beta2,
-    adam_eps = eps
+    adam_eps = eps,
+    amsgrad = amsgrad,
+    seed = seed
     ) %>%
     purrr::map_dfr(.f = function(x) x %>% as.vector() %>% setNames(paste0("p", seq_along(init_coef))))
 

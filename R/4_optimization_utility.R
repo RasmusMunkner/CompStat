@@ -308,7 +308,7 @@ simple_logistic_loglikelihood <- function(n = 10, p = 2, beta = 1:p){
 #' trace %>% plot(type = "p")
 simple_logistic_loglikelihood_optimizable <- function(n = 10, p = 2, beta = 1:p){
   sll <- simple_logistic_likelihood(n,p,beta)
-  make_logistic_loglikelihood(
+  logistic_loglikelihood(
     design = sll$X,
     response = sll$y,
     penalty_matrix = matrix(0, nrow = ncol(sll$X), ncol = ncol(sll$X)),

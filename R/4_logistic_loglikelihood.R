@@ -63,7 +63,7 @@ logistic_loglikelihood <- function(
     penalty_matrix = penalty_matrix,
     lambda = lambda
   ),
-  class = "CompStatOptimizable"
+  class = c("CompStatLogisticLogLikelihood", "CompStatOptimizable")
   )
 }
 

@@ -168,7 +168,7 @@ Adam_Optimizer <- function(
   update_param <- function(grad){
     rho <<- beta_1 * rho + (1-beta_1) * grad
     nu_proposal <- beta_2 * nu + (1-beta_2) * grad^2
-    nu <<- ifelse(amsgrad, max(nu_proposal, nu), nu_proposal)
+    nu <<- ifelse(amsgrad, pmax(nu_proposal, nu), nu_proposal)
     rho / (sqrt(nu) + eps)
   }
 
@@ -319,7 +319,7 @@ test_that("sgd converges to the right values ", {
   targets <- rnorm(10)
   init_param <- rnorm(10)
   sc <- stopping_criterion(maxiter = 250)
-  lr <- polynomial_schedule(0.4, 0.05, K=100, p=1)
+  lr <- polynomial_schedule(0.4, 0.05, later=100, p=1)
   opt_target <- optimizable_parabola(targets)
   trace_vanilla <- SGD(
     opt_target, Vanilla_Optimizer(lr),
@@ -347,8 +347,8 @@ test_that("sgd converges to the right values ", {
 set.seed(0)
 targets <- rnorm(10)
 init_param <- rnorm(10)
-sc <- stopping_criterion(maxiter = 250)
-lr <- polynomial_schedule(0.4, 0.05, K=100, p=1)
+sc <- stopping_criterion(maxiter = 100)
+lr <- polynomial_schedule(0.4, 0.05, later=100, p=1)
 opt_target <- optimizable_parabola(targets)
 trace_vanilla <- SGD(
   opt_target, Vanilla_Optimizer(lr),
@@ -375,7 +375,7 @@ set.seed(NULL)
 ## Applying SGD to the horse data
 
 ```{r Applying SGD to horse data}
-
+set.seed(0)
 data("horses")
 design <- horses$Temperature %>% ExpandBspline()
 opt_target <- logistic_loglikelihood(
@@ -383,24 +383,93 @@ opt_target <- logistic_loglikelihood(
   design = design,
   lambda = 1e-5
   )
-lr <- polynomial_schedule(1, 0.1, later = 300, p = 20)
+lr <- polynomial_schedule(1, 0.1, later = 300, p = 20) # Rapid decay after 300
 adam <- Adam_Optimizer(lr)
 trace <- SGD(
   opt_target, adam, init_param = rep(0,opt_target$n_param),
-  stop_crit = 500,
+  stop_crit = 400,
   batch_size = nrow(horses)/4,
   trace_precision = "epoch"
   )
 
-plot(trace)
+p1 <- plot(trace) + ggplot2::ggtitle("Parameter Values")
 
-plot(design, trace %>% tail(1), post_transform = function(x) exp(x) / (1 + exp(x)))
+p2 <- plot(design, trace %>% tail(1), post_transform = function(x) exp(x) / (1 + exp(x))) +
+  ggplot2::lims(x = c(34,42), y = c(0,1)) +
+  ggplot2::labs(x = "Temperature", y = "P(Dead|Temperature)") +
+  ggplot2::ggtitle("Final Fitted Regression")
 
-ggplot2::ggplot(horses, ggplot2::aes(x = Temperature, y = dead)) +
-  ggplot2::geom_smooth(method = "loess")
+p3 <- ggplot2::ggplot(horses, ggplot2::aes(x = Temperature, y = dead)) +
+  ggplot2::geom_smooth(method = "loess", se = F) +
+  ggplot2::lims(x = c(34,42), y = c(0,1)) +
+  ggplot2::labs(x = "Temperature", y = "Loess smoother (Dead | Temperature)") +
+  ggplot2::ggtitle("Loess smoother")
 
+gridExtra::grid.arrange(grobs = list(p1, p2, p3), nrow = 2)
+
+set.seed(NULL)
 
 ```
+
+## Profiling the implementation{.scrollable}
+
+```{r Profiling r SGD}
+#| cache: true
+
+set.seed(0)
+data("horses")
+design <- horses$Temperature %>% ExpandBspline()
+opt_target <- logistic_loglikelihood(
+  horses$dead,
+  design = design,
+  lambda = 1e-5
+  )
+lr <- polynomial_schedule(1, 0.1, later = 300, p = 20) # Rapid decay after 300
+adam <- Adam_Optimizer(lr)
+
+profvis::profvis({
+  trace <- SGD(
+  opt_target, adam, init_param = rep(0,opt_target$n_param),
+  stop_crit = 400,
+  batch_size = nrow(horses)/4,
+  trace_precision = "epoch"
+  )
+}, simplify = F)
+
+set.seed(NULL)
+```
+
+## Profiling without tracing {.scrollable}
+
+```{r Profiling r SGD without tracing}
+#| cache: true
+
+set.seed(0)
+data("horses")
+design <- horses$Temperature %>% ExpandBspline()
+opt_target <- logistic_loglikelihood(
+  horses$dead,
+  design = design,
+  lambda = 1e-5
+  )
+lr <- polynomial_schedule(1, 0.1, later = 300, p = 20) # Rapid decay after 300
+adam <- Adam_Optimizer(lr)
+
+profvis::profvis({
+  trace <- SGD(
+  opt_target, adam, init_param = rep(0,opt_target$n_param),
+  stop_crit = 400,
+  batch_size = nrow(horses)/4,
+  trace_precision = "none"
+  )
+}, simplify = F)
+
+set.seed(NULL)
+
+```
+
+## C++ implementation
+
 
 
 
@@ -416,143 +485,3 @@ ggplot2::ggplot(horses, ggplot2::aes(x = Temperature, y = dead)) +
 - Benchmark the C++ implementation
 
 ## Benchmark
-
-```{r Testing SGD Implementations, eval = F}
-
-logistic_ll <- make_logistic_loglikelihood()
-
-lr <- polynomial_schedule(0.1, 0.001, K = 50)
-vanilla_sgd_opt <- Vanilla_Optimizer(lr)
-momentum_sgd_opt <- Adam_Optimizer(lr, beta_1 = 0.9, beta_2 = 1, eps = 1)
-adam_sgd_opt <- Adam_Optimizer(lr, beta_1 = 0.9, beta_2 = 0.99)
-
-set.seed(0)
-opt_param <- rnorm(10)
-init_param <- rnorm(10)
-test_optimization <- optimizable_parabola(opt_param)
-set.seed(NULL)
-
-sc <- stopping_criterion(tol_obj = 1e-6, maxiter = 999)
-
-trace_vanilla <- SGD(
-  test_optimization,
-  optimizer = vanilla_sgd_opt,
-  init_param = init_param,
-  stop_crit = sc
-)
-
-trace_momentum <- SGD(
-  test_optimization,
-  optimizer = momentum_sgd_opt,
-  init_param = init_param,
-  stop_crit = sc
-)
-
-trace_adam <- SGD(
-  test_optimization,
-  optimizer = adam_sgd_opt,
-  init_param = init_param,
-  stop_crit = sc
-)
-
-trace_vanish <- SGD(
-  test_optimization,
-  optimizer = vanish_sgd_opt,
-  init_param = init_param,
-  stop_crit = sc
-)
-
-trace_vanilla %>% plot()
-trace_momentum %>% plot()
-trace_adam %>% plot()
-trace_vanish %>% plot()
-
-final_params <- list(trace_vanilla, trace_momentum, trace_adam) %>% 
-  purrr::map_dfr(.f = tail)
-
-final_params %>% 
-  tibble::add_row(opt_param %>% as.list() %>% magrittr::set_names(colnames(final_params)) %>% tibble::as_tibble()) %>% 
-  purrr::map_dfc(.f = function(x){x %>% range() %>% diff()})
-
-```
-
-```{r Profiling Full R Implementation, eval = F}
-
-logistic_opfun <- make_logistic_loglikelihood()
-adam_sgd_opt <- Adam_Optimizer(1e-3)
-
-trace <- SGD(logistic_opfun, adam_sgd_opt, batch_size = 100, stop_crit = 200)
-plot(trace)
-
-profvis::profvis(
-  SGD(
-    logistic_opfun, adam_sgd_opt, batch_size = 100,
-    stop_crit = 1000, trace_precision ="epoch"),
-  simplify = F
-)
-
-microbenchmark::microbenchmark(
-  SGD(logistic_opfun, vanilla_sgd_opt, batch_size = 100, stop_crit = 10, trace_precision = "batch"),
-  SGD(logistic_opfun, vanilla_sgd_opt, batch_size = 100, stop_crit = 10, trace_precision = "epoch"),
-  SGD(logistic_opfun, vanilla_sgd_opt, batch_size = 100, stop_crit = 10, trace_precision = "none")
-)
-
-```
-
-
-```{r Microbenchmarks, eval = F}
-
-sgd_vanilla <- function(){
-  SGD(
-    logistic_opfun,
-    optimizer = vanilla_sgd_opt,
-    stop_crit = sc
-  )
-}
-
-sgd_vanilla()
-
-sgd_momentum <- function(){
-  SGD(
-    logistic_opfun,
-    optimizer = momentum_sgd_opt,
-    init_param = init_param,
-    stop_crit = sc
-  )
-}
-
-sgd_adam <- function(){
-  SGD(
-    logistic_opfun,
-    optimizer = adam_sgd_opt,
-    init_param = init_param,
-    stop_crit = sc
-  )
-}
-
-profvis::profvis(
-  sgd_vanilla()
-)
-
-
-microbenchmark::microbenchmark(
-  sgd_vanilla(),
-  sgd_momentum(),
-  sgd_adam()
-) %>% 
-  ggplot2::autoplot()
-
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
