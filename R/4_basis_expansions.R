@@ -49,7 +49,7 @@ CompStatBasisExpansion <- function(X, x, Omega, expand_new){
 #' }
 #' )
 #' plot(one_hot, rnorm(9))
-plot.CompStatBasisExpansion <- function(BasisExpansion, beta, post_transform = function(x) x){
+plot.CompStatBasisExpansion <- function(BasisExpansion, beta, post_transform = function(x) exp(x) / (1 + exp(x))){
   y <- post_transform(BasisExpansion$X %*% beta)
   data.frame(x = BasisExpansion$x, y = y) %>%
     ggplot2::ggplot(ggplot2::aes(x = x, y = y)) +
@@ -175,7 +175,7 @@ spline_pen_mat <- function(inner_knots) {
 #' @examples
 #' PolyBasis <- ExpandPoly(rnorm(500), degree = 8)
 #' plot(PolyBasis, rnorm(ncol(PolyBasis$X), sd = 20))
-ExpandPoly <- function(x, degree = 4){
+ExpandPoly <- function(x, degree = 9){
   x_min <- min(x)
   x_max <- max(x)
   mean_shift <- x_min

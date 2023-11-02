@@ -69,7 +69,10 @@ stopping_criterion <- function(
 
   structure(list(
     check = stopper,
-    maxiter = maxiter
+    maxiter = maxiter,
+    tol_obj = tol_obj,
+    tol_param = tol_param,
+    threshhold_obj = threshhold_obj
     ),
     class = "CompStatStoppingCriterion"
   )
@@ -115,10 +118,9 @@ constant_schedule <- function(lr){
 #'
 #' @return
 #' @export
-plot.CompStatTrace <- function(trace){
+plot.CompStatTrace <- function(trace, what = "po"){
   plotdata <-
   trace %>%
-    as.data.frame() %>%
     dplyr::mutate(Iteration = dplyr::row_number())
   p1 <- plotdata %>%
     dplyr::select(-obj) %>%
@@ -131,7 +133,53 @@ plot.CompStatTrace <- function(trace){
     ggplot2::geom_line() +
     ggplot2::labs(x = "Iteration", y = "Objective") +
     ggplot2::ggtitle("Objective Function")
-  gridExtra::grid.arrange(grobs = list(p1, p2), ncol = 2)
+  switch(what,
+         "p" = p1,
+         "o" = p2,
+         gridExtra::grid.arrange(grobs = list(p1, p2), ncol = 2)
+         )
+}
+
+CompareTraces <- function(traces, what = "po"){
+  plotdata <- traces %>%
+    purrr::imap_dfr(.f = function(trace, name){
+      trace %>%
+        dplyr::mutate(Iteration = dplyr::row_number(),
+                      Algorithm = name)
+    })
+  p1 <- plotdata %>%
+    dplyr::select(-obj) %>%
+    tidyr::pivot_longer(cols = -c(Iteration, Algorithm), names_to = "Parameter", values_to = "Value") %>%
+    ggplot2::ggplot(ggplot2::aes(x = Iteration, y = Value, color = Parameter)) +
+    ggplot2::geom_line() +
+    ggplot2::facet_wrap(~Algorithm) +
+    ggplot2::ggtitle("Parameters")
+  p2 <- plotdata %>%
+    ggplot2::ggplot(ggplot2::aes(x = Iteration, y = obj, color = Algorithm)) +
+    ggplot2::geom_line() +
+    ggplot2::labs(x = "Iteration", y = "Objective") +
+    ggplot2::ggtitle("Objective Function")
+  switch(what,
+         "p" = p1,
+         "o" = p2,
+         gridExtra::grid.arrange(grobs = list(p1, p2), ncol = 2)
+  )
+}
+
+#' Extract the last row from a CompStatTrace
+#'
+#' @param trace A CompStatTrace
+#'
+#' @return
+#' @export
+#'
+#' @examples
+tail.CompStatTrace <- function(trace, type = "p"){
+  switch(type,
+         "p" = trace[nrow(trace), 1:(ncol(trace)-1)],
+         "o" = trace[nrow(trace), ncol(trace)],
+         trace[nrow(trace), ]
+         ) %>% unlist()
 }
 
 #' Generic wrapper around CompStatOptimizable creation

@@ -5,8 +5,12 @@ lll_gradC <- function(design, coef, y, pen_matrix, lambda) {
     .Call(`_CompStat_lll_gradC`, design, coef, y, pen_matrix, lambda)
 }
 
-SGD_CPP_PRIMITIVE <- function(design, coef, y, pen_matrix, lambda, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps, amsgrad, seed, objtarget) {
-    .Call(`_CompStat_SGD_CPP_PRIMITIVE`, design, coef, y, pen_matrix, lambda, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps, amsgrad, seed, objtarget)
+lllC <- function(design, coef, y, pen_matrix, lambda) {
+    .Call(`_CompStat_lllC`, design, coef, y, pen_matrix, lambda)
+}
+
+SGD_CPP_PRIMITIVE <- function(design, coef, y, pen_matrix, lambda, lr, batch_size, maxiter, objtarget, beta_1, beta_2, eps, amsgrad, seed) {
+    .Call(`_CompStat_SGD_CPP_PRIMITIVE`, design, coef, y, pen_matrix, lambda, lr, batch_size, maxiter, objtarget, beta_1, beta_2, eps, amsgrad, seed)
 }
 
 epanechnikov_l2norm_runningC <- function(x, r) {

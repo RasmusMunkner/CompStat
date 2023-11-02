@@ -2,25 +2,25 @@
 test_that("sgd converges to the right values ", {
   set.seed(0)
   targets <- rnorm(10)
-  init_param <- rnorm(10)
+  init_par <- rnorm(10)
   sc <- stopping_criterion(maxiter = 250)
   lr <- polynomial_schedule(0.4, 0.05, later=100, p=1)
   opt_target <- optimizable_parabola(targets)
   trace_vanilla <- SGD(
     opt_target, Vanilla_Optimizer(lr),
-    init_param = init_param, stop_crit = sc
+    init_par = init_par, stop_crit = sc
     )
   trace_momentum <- SGD(
     opt_target, Momentum_Optimizer(lr, beta_1 = 0.8),
-    init_param = init_param, stop_crit = sc
+    init_par = init_par, stop_crit = sc
   )
   trace_adam <- SGD(
     opt_target, Adam_Optimizer(lr, beta_1 = 0.8),
-    init_param = init_param, stop_crit = sc
+    init_par = init_par, stop_crit = sc
   )
-  expect_equal(max(abs(tail(trace_vanilla, 1) - targets)) < 1e-6, TRUE)
-  expect_equal(max(abs(tail(trace_momentum, 1) - targets)) < 1e-6, TRUE)
-  expect_equal(max(abs(tail(trace_adam, 1) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_vanilla) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_momentum) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_adam) - targets)) < 1e-6, TRUE)
 
   set.seed(NULL)
 })
@@ -72,22 +72,22 @@ test_that("C++ sgd converges to the right value", {
   batch_size <- 24
   lr <- polynomial_schedule(0.1, 0.001, 50)
   opt <- Adam_Optimizer(
-    lr, beta_1 = 0.9, beta_2 = 0.95, eps = 1e-8, amsgrad = T)
+    lr, batch_size, beta_1 = 0.9, beta_2 = 0.95, eps = 1e-8, amsgrad = T)
 
   for (i in 1:t){
     par_r <- SGD(
-      opt_target, opt, init_param = random_coef[[i]],
-      stop_crit = epochs, batch_size = batch_size, trace_precision = "none",
+      opt_target, opt,
+      init_par = random_coef[[i]],
+      stop_crit = epochs,
       seed = 0
-      ) %>% tail(1)
+      ) %>% tail()
 
     par_c <- SGD_CPP(
-      lll = opt_target,
-      init_coef = random_coef[[i]],
-      lr = lr, beta1 = 0.9, beta2 = 0.95, eps = 1e-8, batch_size = batch_size,
-      stop_crit = epochs, amsgrad = T,
+      opt_target, opt,
+      init_par = random_coef[[i]],
+      stop_crit = epochs,
       seed = 0
-    ) %>% tail(1) %>% unlist()
+    ) %>% tail()
 
     expect_equal(par_c, par_r)
   }

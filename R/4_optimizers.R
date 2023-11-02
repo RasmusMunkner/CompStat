@@ -7,19 +7,27 @@
 #'
 #' @return A CompStatOptimizer
 #' @export
-CompStatOptimizer <- function(lr, update_param, reset){
+CompStatOptimizer <- function(lr, batch_size, update_param, reset, par){
 
   # Ensure the learning rate is callable
   if (is.function(lr)){
     lrate <- lr
   } else {
-    lrate <- function(epoch) {lr[min(epoch, length(lr))]}
+    lrate <- function(epoch, ...) {lr[pmin(epoch, length(lr))]}
+  }
+  # Ensure batch_size is callable
+  if (is.function(batch_size)){
+    bsize <- batch_size
+  } else {
+    bsize <- function(epoch, ...) {batch_size[pmin(epoch, length(batch_size))]}
   }
 
   structure(list(
     lr = lrate,
+    batch_size = bsize,
     update_param = update_param,
-    reset = reset
+    reset = reset,
+    par = par
   ),
   class = "CompStatOptimizer")
 }
@@ -34,7 +42,7 @@ CompStatOptimizer <- function(lr, update_param, reset){
 #' @return A CompStatOptimizer
 #' @export
 Adam_Optimizer <- function(
-    lr = 1e-3, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
+    lr = 1e-3, batch_size = 32, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
     ){
 
   update_param <- function(grad){
@@ -53,7 +61,10 @@ Adam_Optimizer <- function(
     nu <<- 0
   }
 
-  CompStatOptimizer(lr, update_param, reset)
+  CompStatOptimizer(
+    lr, batch_size, update_param, reset,
+    par = list(beta_1 = beta_1, beta_2 = beta_2, eps = eps, amsgrad = amsgrad)
+    )
 }
 
 #' Momentum optimizer constructor
@@ -62,8 +73,8 @@ Adam_Optimizer <- function(
 #'
 #' @return A CompStatOptimizer
 #' @export
-Momentum_Optimizer <- function(lr = 1e-3, beta_1 = 0.95){
-  Adam_Optimizer(lr, beta_1 = beta_1, beta_2 = 1, eps = 1)
+Momentum_Optimizer <- function(lr = 1e-3, batch_size = 32, beta_1 = 0.95){
+  Adam_Optimizer(lr, batch_size, beta_1 = beta_1, beta_2 = 1, eps = 1)
 }
 
 #' Vanilla/Identity optimizer
@@ -72,8 +83,8 @@ Momentum_Optimizer <- function(lr = 1e-3, beta_1 = 0.95){
 #'
 #' @return A CompStatOptimizer
 #' @export
-Vanilla_Optimizer <- function(lr = 1e-3){
-  Adam_Optimizer(lr, beta_1 = 0, beta_2 = 1, eps = 1)
+Vanilla_Optimizer <- function(lr = 1e-3, batch_size = 32){
+  Adam_Optimizer(lr, batch_size, beta_1 = 0, beta_2 = 1, eps = 1)
 }
 
 

@@ -77,7 +77,7 @@ logistic_loglikelihood <- function(
 #' @examples
 #' diagmat(c(1,2,3))
 diagmat <- function(v){
-  m <- matrix(0, nrow = length(v), ncol = length(v))
+  m <- Matrix::Matrix(0, nrow = length(v), ncol = length(v))
   diag(m) <- v
   m
 }

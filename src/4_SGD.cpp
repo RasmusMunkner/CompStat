@@ -23,7 +23,7 @@ arma::vec lll_gradC(
   return(grad);
 }
 
-[[Rcpp::exports]]
+//[[Rcpp::export]]
 double lllC(
     const arma::mat &design, const arma::vec &coef, const arma::vec &y,
     const arma::mat &pen_matrix, const double &lambda
@@ -40,11 +40,11 @@ double lllC(
 Rcpp::List SGD_CPP_PRIMITIVE(
     const arma::mat &design, arma::vec coef, const arma::vec &y,
     const arma::mat &pen_matrix, const double &lambda,
-    const NumericVector &lr, const int &maxiter, int &batch_size,
-    const double &adam_beta1, const double &adam_beta2, const double &adam_eps,
+    const NumericVector &lr, const IntegerVector &batch_size,
+    const int &maxiter, const double &objtarget,
+    const double &beta_1, const double &beta_2, const double &eps,
     const bool &amsgrad,
-    const int &seed,
-    const double &objtarget
+    const int &seed
 ){
   Rcpp::List coef_list (maxiter);
   Rcpp::List obj_list (maxiter);
@@ -52,8 +52,8 @@ Rcpp::List SGD_CPP_PRIMITIVE(
   arma::vec grad;
   arma::vec rho = vec(coef.n_elem); rho.zeros();
   arma::vec nu = vec(coef.n_elem); nu.zeros();
-  batch_size = std::min<int>(y.n_elem, batch_size);
-  int batches_per_epoch = std::ceil(double(y.n_elem) / batch_size);
+  int batch_size_now;
+  int batches_per_epoch;
   uvec indicies_all, indicies;
   dqrng::dqRNGkind("Xoroshiro128+");
   dqrng::dqset_seed(IntegerVector::create(seed)); // Sets the shuffling seed
@@ -61,10 +61,13 @@ Rcpp::List SGD_CPP_PRIMITIVE(
   for (int i = 0; i < maxiter; i++){
     indicies_all = as<uvec>(dqrng::dqsample_int(y.n_elem, y.n_elem));
 
+    batch_size_now = std::min<int>(y.n_elem, batch_size[i]);
+    batches_per_epoch = std::ceil(double(y.n_elem) / batch_size_now);
+
     for (int b = 0; b < batches_per_epoch; b++){
       indicies = indicies_all.subvec(
-        b * batch_size,
-        std::min<int>((b+1) * batch_size - 1, y.n_elem - 1)
+        b * batch_size_now,
+        std::min<int>((b+1) * batch_size_now - 1, y.n_elem - 1)
       );
 
       grad = lll_gradC(
@@ -75,16 +78,16 @@ Rcpp::List SGD_CPP_PRIMITIVE(
         lambda
         );
 
-      rho = rho * adam_beta1 + grad * (1 - adam_beta1);
+      rho = rho * beta_1 + grad * (1 - beta_1);
       if (amsgrad){
         nu = arma::max(
-          nu * adam_beta2 + pow(grad, 2) * (1 - adam_beta2), nu
+          nu * beta_2 + pow(grad, 2) * (1 - beta_2), nu
         );
       } else {
-        nu = nu * adam_beta2 + pow(grad, 2) * (1 - adam_beta2);
+        nu = nu * beta_2 + pow(grad, 2) * (1 - beta_2);
       }
 
-      coef = coef - lr[i] * rho / (sqrt(nu) + adam_eps);
+      coef = coef - lr[i] * rho / (sqrt(nu) + eps);
     }
 
     coef_list[i] = as<NumericVector>(wrap(coef)); // Breaks mutability of coef
@@ -108,8 +111,6 @@ Rcpp::List SGD_CPP_PRIMITIVE(
 
   return(results);
 }
-
-
 
 
 

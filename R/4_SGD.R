@@ -4,11 +4,10 @@
 #'
 #' @param optimizable A CompStatOptimizable
 #' @param optimizer A CompStatOptimizer or a key corresponding to one
-#' @param init_param Initial parameters for optimization.
+#' @param init_par Initial parameters for optimization.
 #' @param lr Learning rate schedule
 #' @param stop_crit A CompStatStoppingCriterion. Alternatively a number of epochs.
 #' @param trace_precision One of 'batch', 'epoch'. Other values indicate no tracing.
-#' @param ... Additional arguments passed to the optimizer if it was specified via a key
 #'
 #' @return
 #' @export
@@ -21,14 +20,11 @@
 SGD <- function(
     optimizable,
     optimizer = Vanilla_Optimizer(),
-    init_param = NULL,
+    init_par = NULL,
     stop_crit = 50,
     shuffle = T,
-    batch_size = 1,
     tracing = T,
-    objtarget = -Inf,
-    seed = NULL,
-    ...
+    seed = NULL
     ){
 
   dqrng::dqRNGkind("Xoroshiro128+")
@@ -43,26 +39,22 @@ SGD <- function(
   if (!(class(optimizer) %in% c("CompStatOptimizer"))){
     opt <-
       switch(optimizer,
-           "vanilla"= Vanilla_Optimizer(...),
-           "momentum"= Momentum_Optimizer(...),
-           "adam" = Adam_Optimizer(...)
+           "vanilla"= Vanilla_Optimizer(),
+           "momentum"= Momentum_Optimizer(),
+           "adam" = Adam_Optimizer()
            )
   } else {
     opt <- optimizer
   }
   opt$reset()
 
-  # Useful control quantities
-  batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
-  max_total_updates <- batches_per_epoch * stop_crit$maxiter
-
   # Initialize parameters
-
-  if (is.null(init_param)){
-    init_param <- rep(0, optimizable$n_param)
+  if (is.null(init_par)){
+    init_par <- rep(0, optimizable$n_param)
   }
-  init_param <- init_param %>% dplyr::coalesce(0)
-  par_next <- init_param
+  init_par <- init_par %>% dplyr::coalesce(0)
+  par_next <- init_par
+  obj_next <- optimizable$objective(init_par)
 
   trace <- matrix(
     NA, nrow = (stop_crit$maxiter+1), ncol = optimizable$n_param + 1)
@@ -78,7 +70,14 @@ SGD <- function(
       index_permutation <- 1:optimizable$n_index
     }
 
+    # Remember the previous parameters
     par_before <- par_next
+    obj_before <- obj_next
+
+    # Determine batch size
+    batch_size <- optimizer$batch_size(epoch, obj = obj_before, n = optimizable$n_index)
+    batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
+
     # Apply minibatch gradient updates
     for (b in 1:batches_per_epoch){
 
@@ -90,33 +89,36 @@ SGD <- function(
                             min(b*batch_size, optimizable$n_index)]
       )
 
-      update <- opt$lr(epoch) * opt$update_param(grad)
-
-      par_next <- par_now - update
+      par_next <- par_now - opt$lr(epoch) * opt$update_param(grad)
     }
 
+    # Tracing and keep track of objective function
+    obj_next <- optimizable$objective(par_next)
     if (tracing == T){
-      trace[epoch+1,] <- c(par_next, optimizable$objective(par_next))
+      trace[epoch+1,] <- c(par_next, obj_next)
     }
 
+    # Check if stopping criterion is fulfilled
     if (stop_crit$check(
       epoch,
       param = par_next,
       param_old = par_before,
-      obj = optimizable$objective(par_next),
-      obj_old = optimizable$objective(par_before)
+      obj = obj_next,
+      obj_old = obj_before
     )
     ){
       return(
         if (tracing){
           trace %>%
             magrittr::set_colnames(c(paste0("p", 1:optimizable$n_param), "obj")) %>%
+            as.data.frame() %>%
             magrittr::set_class(c("CompStatTrace", class(.))) %>%
             return()
         } else {
-          c(par_next, optimizable$objective(par_next)) %>%
+          c(par_next, obj_next) %>%
             matrix(nrow = 1) %>%
             magrittr::set_colnames(c(paste0("p", 1:optimizable$n_param), "obj")) %>%
+            as.data.frame() %>%
             return()
         }
 
@@ -166,14 +168,16 @@ SGD <- function(
 #' tidyr::pivot_longer(cols = -iter, names_to = "coef", values_to = "value") %>%
 #' ggplot2::ggplot(ggplot2::aes(x = iter, y = value, color = coef)) +
 #' ggplot2::geom_line()
+#'
 SGD_CPP <- function(
-    lll, init_coef = NULL,
-    lr = 1e-3, beta1 = 0.9, beta2 = 0.95, eps = 1e-8, batch_size = 32,
-    stop_crit = 50, objtarget = 0,
-    disable_adam = F, amsgrad = T,
+    lll,
+    optimizer,
+    init_par = NULL,
+    stop_crit = 50,
     seed = NULL
     ){
 
+  # Check that the objective is a logistic loglikelihood
   if (!("CompStatLogisticLogLikelihood" %in% class(lll))){
     stop(paste0("Input lll must be of class 'CompStatLogisticLogLikelihood'."))
   } else {
@@ -183,52 +187,40 @@ SGD_CPP <- function(
     y <- lll$response
   }
 
+  # Ensure the stopping criterion is a CompStatStoppingCriterion
   stop_crit <- stopping_criterion(stop_crit)
-  if (!is.function(lr)){
-    if(length(lr) != stop_crit$maxiter){
-      if (length(lr) == 1){
-        lrate <- rep(lr, stop_crit$maxiter)
-      } else {
-        stop("lr should be a scalar, a vector of length maxiter or a function.")
-      }
-    } else {
-      lrate <- lr
-    }
-  } else {
-    lrate <- lr(1:stop_crit$maxiter)
+
+  # Call learning rate and batch size
+  lr <- optimizer$lr(1:stop_crit$maxiter)
+  batch_size <- optimizer$batch_size(1:stop_crit$maxiter, n = optimizable$n_index)
+
+  # If nothing else is specified, initialize all parameters to 0
+  if (is.null(init_par)){
+    init_par <- rep(0,ncol(design))
   }
 
-  if (is.null(init_coef)){
-    init_coef <- rnorm(ncol(design))
-  }
-
-
-  if (disable_adam){
-    beta1 <- 0
-    beta2 <- 1
-    eps <- 1
-  }
-
+  # Call the cpp implementation
   trace <- SGD_CPP_PRIMITIVE(
     design = design,
-    coef = init_coef,
+    coef = init_par,
     y = y,
-    lr = lrate,
+    lr = lr,
     pen_matrix = pen_matrix,
     lambda = lambda,
     maxiter = stop_crit$maxiter,
     batch_size = batch_size,
-    adam_beta1 = beta1,
-    adam_beta2 = beta2,
-    adam_eps = eps,
-    amsgrad = amsgrad,
+    beta_1 = optimizer$par$beta_1,
+    beta_2 = optimizer$par$beta_2,
+    eps = optimizer$par$eps,
+    amsgrad = optimizer$par$amsgrad,
     seed = seed,
-    objtarget = objtarget
+    objtarget = stop_crit$threshhold_obj
     )
 
   trace[[1]] %>%
-    purrr::map_dfr(.f = function(x) x %>% as.vector() %>% setNames(paste0("p", seq_along(init_coef)))) %>%
-    cbind(data.frame(obj = trace[[2]] %>% unlist(use.names = F)))
+    purrr::map_dfr(.f = function(x) x %>% as.vector() %>% setNames(paste0("p", seq_along(init_par)))) %>%
+    cbind(data.frame(obj = trace[[2]] %>% unlist(use.names = F))) %>%
+    magrittr::set_class(c("CompStatTrace", class(.)))
 
 }
 

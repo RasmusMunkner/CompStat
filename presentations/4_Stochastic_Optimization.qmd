@@ -5,11 +5,13 @@ format: revealjs
 slide-number: c/t
 ---
 
-```{r Loading libraries}
-#| echo: false
+## Relevant R-Packages
 
-library(CompStat)
-library(testthat)
+```{r Loading libraries}
+#| echo: true
+
+library(CompStat) # My implementation is bundled as a package
+library(testthat) # For formal testing
 
 ```
 
@@ -358,26 +360,26 @@ test_that("sgd converges to the right values ", {
 ```{r Checking that SDG works with plots}
 set.seed(0)
 targets <- rnorm(10)
-init_param <- rnorm(10)
+init_par <- rnorm(10)
 sc <- stopping_criterion(maxiter = 100)
 lr <- polynomial_schedule(0.4, 0.05, later=100, p=1)
 opt_target <- optimizable_parabola(targets)
 trace_vanilla <- SGD(
   opt_target, Vanilla_Optimizer(lr),
-  init_param = init_param, stop_crit = sc
+  init_par = init_par, stop_crit = sc
   )
 trace_momentum <- SGD(
   opt_target, Momentum_Optimizer(lr, beta_1 = 0.8),
-  init_param = init_param, stop_crit = sc
+  init_par = init_par, stop_crit = sc
 )
 trace_adam <- SGD(
   opt_target, Adam_Optimizer(lr, beta_1 = 0.8),
-  init_param = init_param, stop_crit = sc
+  init_par = init_par, stop_crit = sc
 )
   
-p1 <- trace_vanilla %>% plot() + ggplot2::ggtitle("Vanilla")
-p2 <- trace_momentum %>% plot() + ggplot2::ggtitle("Momentum")
-p3 <- trace_adam %>% plot() + ggplot2::ggtitle("Adam")
+p1 <- trace_vanilla %>% plot("p") + ggplot2::ggtitle("Vanilla")
+p2 <- trace_momentum %>% plot("p") + ggplot2::ggtitle("Momentum")
+p3 <- trace_adam %>% plot("p") + ggplot2::ggtitle("Adam")
 
 gridExtra::grid.arrange(grobs = list(p1, p2, p3), nrow = 2)
 
@@ -391,79 +393,52 @@ set.seed(NULL)
 set.seed(0)
 data("horses")
 design <- horses$Temperature %>% ExpandBspline()
-opt_target <- logistic_loglikelihood(
-  horses$dead,
-  design = design,
-  lambda = 1e-5
-  )
-lr <- polynomial_schedule(1, 0.1, later = 300, p = 20) # Rapid decay after 300
-adam <- Adam_Optimizer(lr)
-trace <- SGD(
-  opt_target, adam, init_param = rep(0,opt_target$n_param),
-  stop_crit = 400,
-  batch_size = nrow(horses)/4,
-  trace_precision = "epoch"
-  )
-
-p1 <- plot(trace) + ggplot2::ggtitle("Parameter Values")
-
-p2 <- plot(design, trace %>% tail(1), post_transform = function(x) exp(x) / (1 + exp(x))) +
-  ggplot2::lims(x = c(34,42), y = c(0,1)) +
-  ggplot2::labs(x = "Temperature", y = "P(Dead|Temperature)") +
-  ggplot2::ggtitle("Final Fitted Regression")
-
-p3 <- ggplot2::ggplot(horses, ggplot2::aes(x = Temperature, y = dead)) +
-  ggplot2::geom_smooth(method = "loess", se = F) +
-  ggplot2::lims(x = c(34,42), y = c(0,1)) +
-  ggplot2::labs(x = "Temperature", y = "Loess smoother (Dead | Temperature)") +
-  ggplot2::ggtitle("Loess smoother")
-
-gridExtra::grid.arrange(grobs = list(p1, p2, p3), nrow = 2)
-
-set.seed(NULL)
-
-```
-
-## Profiling the implementation{.smaller}
-
-```{r Profiling r SGD}
-#| cache: true
-
-set.seed(0)
-data("horses")
-design <- horses$Temperature %>% ExpandBspline()
 opt_target_horses <- logistic_loglikelihood(
   horses$dead,
   design = design,
   lambda = 1e-5
   )
-lr <- polynomial_schedule(1, 0.1, later = 300, p = 20) # Rapid decay after 300
-adam <- Adam_Optimizer(lr)
-
-profvis::profvis({
-  trace <- SGD(
-  opt_target, adam, init_param = rep(0,opt_target$n_param),
-  stop_crit = 400,
-  batch_size = nrow(horses)/4,
-  trace_precision = "epoch"
+lr <- polynomial_schedule(0.1, 0.01, later = 100, p = 1)
+adam <- Adam_Optimizer(lr, batch_size = floor(nrow(horses)/4))
+trace <- SGD(
+  opt_target_horses, adam, init_par = rep(0,opt_target$n_param),
+  stop_crit = 200,
+  seed = 0
   )
-}, simplify = F)
+set.seed(NULL)
+
+p1 <- plot(trace, "p") + ggplot2::ggtitle("Parameter Values")
+
+p2 <- plot(trace, "o") + ggplot2::ggtitle("Objective Function")
+
+p3 <- plot(design, trace %>% tail(1), post_transform = function(x) exp(x) / (1 + exp(x))) +
+  ggplot2::lims(x = c(34,42), y = c(0,1)) +
+  ggplot2::labs(x = "Temperature", y = "P(Dead|Temperature)") +
+  ggplot2::ggtitle("Final Fitted Regression")
+
+p4 <- ggplot2::ggplot(horses, ggplot2::aes(x = Temperature, y = dead)) +
+  ggplot2::geom_smooth(method = "loess", se = F) +
+  ggplot2::lims(x = c(34,42), y = c(0,1)) +
+  ggplot2::labs(x = "Temperature", y = "Loess smoother (Dead | Temperature)") +
+  ggplot2::ggtitle("Loess smoother")
+
+gridExtra::grid.arrange(grobs = list(p1, p2, p3, p4), nrow = 2)
 
 ```
 
-## Profiling without tracing {.smaller}
+## Garbage collection turns out to be the bottleneck{.smaller}
 
-```{r Profiling r SGD without tracing}
+```{r Profiling r SGD}
 #| cache: true
 
+set.seed(0)
 profvis::profvis({
   trace <- SGD(
-  opt_target_horses, adam, init_param = rep(0,opt_target$n_param),
-  stop_crit = 400,
-  batch_size = nrow(horses)/4,
-  trace_precision = "none"
+  opt_target_horses, adam, init_par = rep(0,opt_target$n_param),
+  stop_crit = 1000
   )
-}, simplify = F)
+})
+set.seed(NULL)
 
 ```
 
@@ -578,17 +553,41 @@ test_that("C++ sgd converges to the right value", {
 ## Benchmark R vs. C++
 
 ```{r R vs cpp benchmark}
+#| cache: true
 
-trace <- SGD(
-  opt_target_horses, adam, init_param = rep(0,opt_target$n_param),
-  stop_crit = 400,
-  batch_size = floor(nrow(horses)/4),
-  trace_precision = "none"
+set.seed(0)
+data("horses")
+design <- horses$Temperature %>% ExpandBspline()
+opt_target_horses <- logistic_loglikelihood(
+  horses$dead,
+  design = design,
+  lambda = 1e-5
   )
+lr <- polynomial_schedule(0.1, 0.01, later = 100, p = 1)
+adam <- Adam_Optimizer(lr, batch_size = floor(nrow(horses)/4))
+
+sgd_r <- function(){
+  SGD(
+  opt_target_horses, adam, init_par = rep(0,opt_target$n_param),
+  stop_crit = 50,
+  seed = 0
+  ) %>% tail()
+}
+
+sgd_c <- function(){
+  SGD_CPP(
+    opt_target_horses, adam, init_par = rep(0,opt_target$n_param),
+    stop_crit = 50,
+    seed = 0
+  ) %>% tail()
+}
 
 microbenchmark::microbenchmark(
-  
-)
+  sgd_c(),
+  sgd_r(),
+  check = "equal"
+) %>% 
+  ggplot2::autoplot()
 
 ```
 
@@ -607,17 +606,17 @@ p <- reg$f_true(x)
 y <- rbinom(n, 1, p)
 
 
-
-targets <- 8:16 %>% purrr::map(.f = function(i){
+nval <- c(7, 11, 15, 19)
+targets <- nval %>% purrr::map(.f = function(i){
   x_spline <- x[1:2^i] %>% ExpandBspline()
   x_poly <- x[1:2^i] %>% ExpandPoly()
   list(
     x_spline = x_spline,
     x_poly = x_poly,
-    lll_spline = logistic_loglikelihood(y[1:2^i], x_spline, lambda = 0),
-    lll_poly = logistic_loglikelihood(y[1:2^i], x_poly, lambda = 0)
+    lll_spline = logistic_loglikelihood(y[1:2^i], x_spline, lambda = 1e-5),
+    lll_poly = logistic_loglikelihood(y[1:2^i], x_poly, lambda = 1e-5)
   )
-})
+}) %>% magrittr::set_names(paste0("n", 2^nval))
 
 set.seed(NULL)
 
@@ -625,8 +624,41 @@ set.seed(NULL)
 
 ```{r Benchmarking}
 
-lr <- polynomial_schedule(1, 0.9, later = 500)
-trace <- SGD_CPP(targets[[1]]$lll_spline, seed = 0, stop_crit = 1e4, batch_size = 100)
+decay_fast <- polynomial_schedule(0.1, 0.9, later = 1)
+decay_slow <- polynomial_schedule(0.1, 0.9, later = 1, p = 0.5)
+proportional_batch <- function(f, propto = function(n) n) {
+  function(epoch, n){
+    rep(ceil(propto(n) * f), length(epoch))
+  }
+}
+
+optimizers <- list(
+  gd_vanilla_fast = Vanilla_Optimizer(decay_fast, proportional_batch(1)),
+  sgd_vanilla_fast = Vanilla_Optimizer(decay_fast, proportional_batch(1, sqrt)),
+  gd_vanilla_slow = Vanilla_Optimizer(decay_slow, proportional_batch(1)),
+  sgd_vanilla_slow = Vanilla_Optimizer(decay_slow, proportional_batch(1, sqrt)),
+  gd_adam_fast = Adam_Optimizer(decay_fast, proportional_batch(1)),
+  sgd_adam_fast = Adam_Optimizer(decay_fast, proportional_batch(1, sqrt)),
+  gd_adam_slow = Adam_Optimizer(decay_slow, proportional_batch(1)),
+  sgd_adam_slow = Adam_Optimizer(decay_slow, proportional_batch(1, sqrt))
+)
+
+lr <- polynomial_schedule(1, 0.1, later = 300)
+adam <- Vanilla_Optimizer(lr)
+trace1 <- SGD_CPP(
+  targets[[1]]$lll_spline, adam,
+  seed = 0, stop_crit = 300, batch_size = 100
+  )
+trace2 <- SGD_CPP(
+  targets[[1]]$lll_spline, adam,
+  seed = 1, stop_crit = 300, batch_size = 50
+  )
+
+CompareTraces(list(LargeBatch = trace1, SmallBatch = trace2, Dup1 = trace1, Dupe2 = trace2), "po")
+
+plot(trace)
+
+plot(targets[[1]]$x_spline, trace %>% tail("p"))
 
 trace %>% 
   dplyr::select(obj) %>% 

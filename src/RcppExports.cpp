@@ -26,9 +26,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// lllC
+double lllC(const arma::mat& design, const arma::vec& coef, const arma::vec& y, const arma::mat& pen_matrix, const double& lambda);
+RcppExport SEXP _CompStat_lllC(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type design(designSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type coef(coefSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type pen_matrix(pen_matrixSEXP);
+    Rcpp::traits::input_parameter< const double& >::type lambda(lambdaSEXP);
+    rcpp_result_gen = Rcpp::wrap(lllC(design, coef, y, pen_matrix, lambda));
+    return rcpp_result_gen;
+END_RCPP
+}
 // SGD_CPP_PRIMITIVE
-Rcpp::List SGD_CPP_PRIMITIVE(const arma::mat& design, arma::vec coef, const arma::vec& y, const arma::mat& pen_matrix, const double& lambda, const NumericVector& lr, const int& maxiter, int& batch_size, const double& adam_beta1, const double& adam_beta2, const double& adam_eps, const bool& amsgrad, const int& seed, const double& objtarget);
-RcppExport SEXP _CompStat_SGD_CPP_PRIMITIVE(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP, SEXP lrSEXP, SEXP maxiterSEXP, SEXP batch_sizeSEXP, SEXP adam_beta1SEXP, SEXP adam_beta2SEXP, SEXP adam_epsSEXP, SEXP amsgradSEXP, SEXP seedSEXP, SEXP objtargetSEXP) {
+Rcpp::List SGD_CPP_PRIMITIVE(const arma::mat& design, arma::vec coef, const arma::vec& y, const arma::mat& pen_matrix, const double& lambda, const NumericVector& lr, const IntegerVector& batch_size, const int& maxiter, const double& objtarget, const double& beta_1, const double& beta_2, const double& eps, const bool& amsgrad, const int& seed);
+RcppExport SEXP _CompStat_SGD_CPP_PRIMITIVE(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP, SEXP lrSEXP, SEXP batch_sizeSEXP, SEXP maxiterSEXP, SEXP objtargetSEXP, SEXP beta_1SEXP, SEXP beta_2SEXP, SEXP epsSEXP, SEXP amsgradSEXP, SEXP seedSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -38,15 +53,15 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const arma::mat& >::type pen_matrix(pen_matrixSEXP);
     Rcpp::traits::input_parameter< const double& >::type lambda(lambdaSEXP);
     Rcpp::traits::input_parameter< const NumericVector& >::type lr(lrSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type batch_size(batch_sizeSEXP);
     Rcpp::traits::input_parameter< const int& >::type maxiter(maxiterSEXP);
-    Rcpp::traits::input_parameter< int& >::type batch_size(batch_sizeSEXP);
-    Rcpp::traits::input_parameter< const double& >::type adam_beta1(adam_beta1SEXP);
-    Rcpp::traits::input_parameter< const double& >::type adam_beta2(adam_beta2SEXP);
-    Rcpp::traits::input_parameter< const double& >::type adam_eps(adam_epsSEXP);
+    Rcpp::traits::input_parameter< const double& >::type objtarget(objtargetSEXP);
+    Rcpp::traits::input_parameter< const double& >::type beta_1(beta_1SEXP);
+    Rcpp::traits::input_parameter< const double& >::type beta_2(beta_2SEXP);
+    Rcpp::traits::input_parameter< const double& >::type eps(epsSEXP);
     Rcpp::traits::input_parameter< const bool& >::type amsgrad(amsgradSEXP);
     Rcpp::traits::input_parameter< const int& >::type seed(seedSEXP);
-    Rcpp::traits::input_parameter< const double& >::type objtarget(objtargetSEXP);
-    rcpp_result_gen = Rcpp::wrap(SGD_CPP_PRIMITIVE(design, coef, y, pen_matrix, lambda, lr, maxiter, batch_size, adam_beta1, adam_beta2, adam_eps, amsgrad, seed, objtarget));
+    rcpp_result_gen = Rcpp::wrap(SGD_CPP_PRIMITIVE(design, coef, y, pen_matrix, lambda, lr, batch_size, maxiter, objtarget, beta_1, beta_2, eps, amsgrad, seed));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -103,6 +118,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_CompStat_lll_gradC", (DL_FUNC) &_CompStat_lll_gradC, 5},
+    {"_CompStat_lllC", (DL_FUNC) &_CompStat_lllC, 5},
     {"_CompStat_SGD_CPP_PRIMITIVE", (DL_FUNC) &_CompStat_SGD_CPP_PRIMITIVE, 14},
     {"_CompStat_epanechnikov_l2norm_runningC", (DL_FUNC) &_CompStat_epanechnikov_l2norm_runningC, 2},
     {"_CompStat_eval_kdensC", (DL_FUNC) &_CompStat_eval_kdensC, 4},
