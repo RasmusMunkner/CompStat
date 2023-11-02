@@ -140,11 +140,18 @@ plot.CompStatTrace <- function(trace, what = "po"){
          )
 }
 
-CompareTraces <- function(traces, what = "po"){
+#' Compare a list of traces for convergence
+#'
+#' @param traces A list of CompStatTraces
+#' @param what Either "p" (parameters) or "o" (objective). Defaults to both.
+#'
+#' @return Either a ggplot or a grid.arrange showing the convergence plots
+#' @export
+CompareTraces <- function(traces, what = "po", row_nr_shift = 0){
   plotdata <- traces %>%
     purrr::imap_dfr(.f = function(trace, name){
       trace %>%
-        dplyr::mutate(Iteration = dplyr::row_number(),
+        dplyr::mutate(Iteration = dplyr::row_number() + row_nr_shift,
                       Algorithm = name)
     })
   p1 <- plotdata %>%

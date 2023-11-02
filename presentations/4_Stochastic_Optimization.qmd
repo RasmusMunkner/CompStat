@@ -12,9 +12,9 @@ slide-number: c/t
 
 library(CompStat) # My implementation is bundled as a package
 library(testthat) # For formal testing
+library(microbenchmark) # Benchmarking
 
 ```
-
 
 ## A matrix derivation of the relevant likelihood{style="font-size: 50%"}
 Consider the negative loglikelihood
@@ -71,7 +71,7 @@ logistic_loglikelihood <- function(
     response,
     design,
     penalty_matrix = NULL,
-    lambda = 0.001
+    lambda = 1e-5
 ){
 
   if (c("CompStatBasisExpansion") %in% class(design)){
@@ -89,7 +89,7 @@ logistic_loglikelihood <- function(
   }
 
   grad <- function(coef, batch = 1:nrow(design)){
-    X <- design[batch,]
+    X <- design[batch,, drop=F]
     y <- response[batch]
 
     eta <- exp(X %*% coef)
@@ -127,41 +127,13 @@ CompStatBasisExpansion <- function(X, x, Omega, expand_new){
 ```
 
 
-## Calculating $\Omega$ for a cubic spline basis {.smaller}
-To calculate the penalty matrix, we should evaluate
-$$
-\Omega_{ij} = \int_{-\infty}^{\infty} \varphi_i''(x)\varphi_j''(x)dx = \sum_{m = 1}^{n} \int_{k_{m-1}}^{k_m} \varphi_i''(x)\varphi_j''(x) dx := \sum_{m = 1}^{n} \int_{k_{m-1}}^{k_m} g_{ij}(x) dx
-$$
-Where we used that we don't care to penalize outside the boundary knots $k_0$ and $k_m$. This could for example be achieved by using natural splines.
-
-Note that for $\varphi_i$ a 3-degree spline, $\varphi_i$ is linear between any two knots $k_{m-1}$, $k_{m}$ and thus $g_{ij}$ is a quadratic on this interval. Hence the Simpson-integration rule
-$$
-\int_a^b g_{ij}(x)dx = \frac{b-a}{6}\left(g_{ij}(a) + 4g_{ij}\left(\frac{a+b}{2}\right) + g_{ij}(b)\right)
-$$
-is an exact equality.
-
-## Calculating $\Omega$ for a polynomial basis {.smaller}
-Letting
-
-$$
-\varphi_i(x) = x^i
-$$
-
-For $i,j > 1$ we get
-$$
-\Omega_{ij} = \int_0^1 \varphi_i''(x)\varphi_j''(x)dx = ij(i-1)(j-1)\int_0^1 x^{i+j-4}dx = \frac{ij(i-1)(j-1)}{i+j-3}
-$$
-
-And for $i,j \leq 2$ we get $\Omega_{ij} = 0$.
-
-
 ## Stochastic Optimization Algorithms
 We consider three different stochastic gradient descent algorithms, each of
 which share the 'Adam' interface
 
-```r{code-line-numbers="1-3|5-14|16-19|21-22|32-47|24-26|28-30"}
+```r{code-line-numbers="1-3|5-14|16-19|21-25|27-33|35-48|50-58"}
 Adam_Optimizer <- function(
-    lr = 1e-3, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
+    lr = 1e-3, batch_size = 32, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
     ){
 
   update_param <- function(grad){
@@ -180,30 +152,41 @@ Adam_Optimizer <- function(
     nu <<- 0
   }
 
-  CompStatOptimizer(lr, update_param, reset)
+  CompStatOptimizer(
+    lr, batch_size, update_param, reset,
+    par = list(beta_1 = beta_1, beta_2 = beta_2, eps = eps, amsgrad = amsgrad)
+    )
 }
 
-Momentum_Optimizer <- function(lr = 1e-3, beta_1 = 0.95){
-  Adam_Optimizer(lr, beta_1 = beta_1, beta_2 = 1, eps = 1)
+Momentum_Optimizer <- function(lr = 1e-3, batch_size = 32, beta_1 = 0.95){
+  Adam_Optimizer(lr, batch_size, beta_1 = beta_1, beta_2 = 1, eps = 1)
 }
 
-Vanilla_Optimizer <- function(lr = 1e-3){
-  Adam_Optimizer(lr, beta_1 = 0, beta_2 = 1, eps = 1)
+Vanilla_Optimizer <- function(lr = 1e-3, batch_size = 32){
+  Adam_Optimizer(lr, batch_size, beta_1 = 0, beta_2 = 1, eps = 1)
 }
 
-CompStatOptimizer <- function(lr, update_param, reset){
+CompStatOptimizer <- function(lr, batch_size, update_param, reset, par){
 
   # Ensure the learning rate is callable
   if (is.function(lr)){
     lrate <- lr
   } else {
-    lrate <- function(epoch) {lr[min(epoch, length(lr))]}
+    lrate <- function(epoch, ...) {lr[pmin(epoch, length(lr))]}
+  }
+  # Ensure batch_size is callable
+  if (is.function(batch_size)){
+    bsize <- batch_size
+  } else {
+    bsize <- function(epoch, ...) {batch_size[pmin(epoch, length(batch_size))]}
   }
 
   structure(list(
     lr = lrate,
+    batch_size = bsize,
     update_param = update_param,
-    reset = reset
+    reset = reset,
+    par = par
   ),
   class = "CompStatOptimizer")
 }
@@ -212,54 +195,47 @@ CompStatOptimizer <- function(lr, update_param, reset){
 
 ## Assembling a SGD algorithm
 
-```r{code-line-numbers="1-11|13-14|16-19|21-32|34-39|41-47|49-57|60-72|74-86|90-102|106-107"}
+```r{code-line-numbers="1-9|11-12|14-15|17-28|30-36|42-50|52-58|60-72|80-89"}
 SGD <- function(
     optimizable,
     optimizer = Vanilla_Optimizer(),
-    init_param = NULL,
+    init_par = NULL,
     stop_crit = 50,
     shuffle = T,
-    batch_size = 1,
-    trace_precision = "batch",
-    seed = NULL,
-    ...
+    tracing = T,
+    seed = NULL
     ){
 
   dqrng::dqRNGkind("Xoroshiro128+")
   dqrng::dqset.seed(seed)
 
   # Ensure stopping criterion is valid
-  if (!(class(stop_crit) %in% c("CompStatStoppingCriterion"))){
-    stop_crit <- stopping_criterion(maxiter = stop_crit)
-  }
+  stop_crit <- stopping_criterion(stop_crit)
 
   # Determine optimizer
   if (!(class(optimizer) %in% c("CompStatOptimizer"))){
     opt <-
       switch(optimizer,
-           "vanilla"= Vanilla_Optimizer(...),
-           "momentum"= Momentum_Optimizer(...),
-           "adam" = Adam_Optimizer(...)
+           "vanilla"= Vanilla_Optimizer(),
+           "momentum"= Momentum_Optimizer(),
+           "adam" = Adam_Optimizer()
            )
   } else {
     opt <- optimizer
   }
   opt$reset()
 
-  # Useful control quantities
-  batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
-  max_total_updates <- batches_per_epoch * stop_crit$maxiter
-
   # Initialize parameters
-  trace <- CompStatTrace(optimizable)
-
-  if (is.null(init_param)){
-    init_param <- rep(NA, optimizable$n_param)
+  if (is.null(init_par)){
+    init_par <- rep(0, optimizable$n_param)
   }
-  init_param <- init_param %>% dplyr::coalesce(rnorm(optimizable$n_param))
-  par_next <- init_param
+  init_par <- init_par %>% dplyr::coalesce(0)
+  par_next <- init_par
+  obj_next <- optimizable$objective(init_par)
 
-  trace <- extend(trace, init_param)
+  trace <- matrix(
+    NA, nrow = (stop_crit$maxiter+1), ncol = optimizable$n_param + 1)
+  trace[1,] <- c(par_next, optimizable$objective(par_next))
 
   for (epoch in 1:stop_crit$maxiter){
 
@@ -270,6 +246,14 @@ SGD <- function(
     } else {
       index_permutation <- 1:optimizable$n_index
     }
+
+    # Remember the previous parameters
+    par_before <- par_next
+    obj_before <- obj_next
+
+    # Determine batch size
+    batch_size <- optimizer$batch_size(epoch, obj = obj_before, n = optimizable$n_index)
+    batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
 
     # Apply minibatch gradient updates
     for (b in 1:batches_per_epoch){
@@ -282,44 +266,44 @@ SGD <- function(
                             min(b*batch_size, optimizable$n_index)]
       )
 
-      update <- opt$lr(epoch) * opt$update_param(grad)
+      par_next <- par_now - opt$lr(epoch) * opt$update_param(grad)
+    }
 
-      par_next <- par_now - update
+    # Tracing and keep track of objective function
+    obj_next <- optimizable$objective(par_next)
+    if (tracing == T){
+      trace[epoch+1,] <- c(par_next, obj_next)
+    }
 
-      if (trace_precision == "batch"){
-        trace <- trace %>% extend(par_next)
-        if (stop_crit$check(
-          epoch,
-          param = trace %>% tail(1),
-          param_old = trace %>% tail(2),
-          obj = trace %>% tail(1, type = "o"),
-          obj_old = trace %>% tail(2, type = "o")
-          )
-        ){
-          return(trace)
+    # Check if stopping criterion is fulfilled
+    if (stop_crit$check(
+      epoch,
+      param = par_next,
+      param_old = par_before,
+      obj = obj_next,
+      obj_old = obj_before
+    )
+    ){
+      return(
+        if (tracing){
+          trace %>%
+            magrittr::set_colnames(c(paste0("p", 1:optimizable$n_param), "obj")) %>%
+            as.data.frame() %>%
+            magrittr::set_class(c("CompStatTrace", class(.))) %>%
+            return()
+        } else {
+          c(par_next, obj_next) %>%
+            matrix(nrow = 1) %>%
+            magrittr::set_colnames(c(paste0("p", 1:optimizable$n_param), "obj")) %>%
+            as.data.frame() %>%
+            return()
         }
-      }
 
+      )
     }
-
-    if (trace_precision == "epoch"){
-      trace <- trace %>% extend(par_next)
-      if (stop_crit$check(
-        epoch,
-        param = trace %>% tail(1),
-        param_old = trace %>% tail(2),
-        obj = trace %>% tail(1, type = "o"),
-        obj_old = trace %>% tail(2, type = "o")
-        )
-      ){
-        return(trace)
-      }
-    }
-
   }
 
-  trace <- trace %>% extend(par_next)
-  return(trace)
+  stop("An error with maxiter occured. SGD should call return from within the iteration loop.")
 }
 ```
 
@@ -331,25 +315,25 @@ SGD <- function(
 test_that("sgd converges to the right values ", {
   set.seed(0)
   targets <- rnorm(10)
-  init_param <- rnorm(10)
+  init_par <- rnorm(10)
   sc <- stopping_criterion(maxiter = 250)
   lr <- polynomial_schedule(0.4, 0.05, later=100, p=1)
   opt_target <- optimizable_parabola(targets)
   trace_vanilla <- SGD(
     opt_target, Vanilla_Optimizer(lr),
-    init_param = init_param, stop_crit = sc
+    init_par = init_par, stop_crit = sc
     )
   trace_momentum <- SGD(
     opt_target, Momentum_Optimizer(lr, beta_1 = 0.8),
-    init_param = init_param, stop_crit = sc
+    init_par = init_par, stop_crit = sc
   )
   trace_adam <- SGD(
     opt_target, Adam_Optimizer(lr, beta_1 = 0.8),
-    init_param = init_param, stop_crit = sc
+    init_par = init_par, stop_crit = sc
   )
-  expect_equal(max(abs(tail(trace_vanilla, 1) - targets)) < 1e-6, TRUE)
-  expect_equal(max(abs(tail(trace_momentum, 1) - targets)) < 1e-6, TRUE)
-  expect_equal(max(abs(tail(trace_adam, 1) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_vanilla) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_momentum) - targets)) < 1e-6, TRUE)
+  expect_equal(max(abs(tail(trace_adam) - targets)) < 1e-6, TRUE)
 
   set.seed(NULL)
 })
@@ -361,7 +345,7 @@ test_that("sgd converges to the right values ", {
 set.seed(0)
 targets <- rnorm(10)
 init_par <- rnorm(10)
-sc <- stopping_criterion(maxiter = 100)
+sc <- stopping_criterion(maxiter = 250)
 lr <- polynomial_schedule(0.4, 0.05, later=100, p=1)
 opt_target <- optimizable_parabola(targets)
 trace_vanilla <- SGD(
@@ -376,14 +360,13 @@ trace_adam <- SGD(
   opt_target, Adam_Optimizer(lr, beta_1 = 0.8),
   init_par = init_par, stop_crit = sc
 )
+set.seed(NULL)
   
 p1 <- trace_vanilla %>% plot("p") + ggplot2::ggtitle("Vanilla")
 p2 <- trace_momentum %>% plot("p") + ggplot2::ggtitle("Momentum")
 p3 <- trace_adam %>% plot("p") + ggplot2::ggtitle("Adam")
 
 gridExtra::grid.arrange(grobs = list(p1, p2, p3), nrow = 2)
-
-set.seed(NULL)
 ```
 
 ## Applying SGD to the horse data
@@ -399,9 +382,9 @@ opt_target_horses <- logistic_loglikelihood(
   lambda = 1e-5
   )
 lr <- polynomial_schedule(0.1, 0.01, later = 100, p = 1)
-adam <- Adam_Optimizer(lr, batch_size = floor(nrow(horses)/4))
+adam <- Adam_Optimizer(lr, batch_size = ceiling(nrow(horses)/4))
 trace <- SGD(
-  opt_target_horses, adam, init_par = rep(0,opt_target$n_param),
+  opt_target_horses, adam, init_par = rep(0,opt_target_horses$n_param),
   stop_crit = 200,
   seed = 0
   )
@@ -417,16 +400,44 @@ p3 <- plot(design, trace %>% tail(1), post_transform = function(x) exp(x) / (1 +
   ggplot2::ggtitle("Final Fitted Regression")
 
 p4 <- ggplot2::ggplot(horses, ggplot2::aes(x = Temperature, y = dead)) +
-  ggplot2::geom_smooth(method = "loess", se = F) +
+  ggplot2::geom_smooth(method = "gam", se = F) +
   ggplot2::lims(x = c(34,42), y = c(0,1)) +
-  ggplot2::labs(x = "Temperature", y = "Loess smoother (Dead | Temperature)") +
-  ggplot2::ggtitle("Loess smoother")
+  ggplot2::labs(x = "Temperature", y = "GAM smoother (Dead | Temperature)") +
+  ggplot2::ggtitle("GAM smoother")
 
 gridExtra::grid.arrange(grobs = list(p1, p2, p3, p4), nrow = 2)
 
 ```
 
-## Garbage collection turns out to be the bottleneck{.smaller}
+## Adam vs. AMSgrad
+
+```{r Adam vs amsgrad}
+
+adam_noams <- Adam_Optimizer(
+  lr, batch_size = ceiling(nrow(horses)/4), amsgrad = F)
+
+trace_noams <- SGD(
+  opt_target_horses, adam_noams, init_par = rep(0,opt_target_horses$n_param),
+  stop_crit = 200,
+  seed = 0
+  )
+
+p1 <- CompareTraces(list(AMS = trace, Adam = trace_noams), what = "p")
+p2 <- CompareTraces(list(AMS = trace, Adam = trace_noams), what = "o")
+shift <- 50
+p3 <- CompareTraces(
+  list(AMS = trace[shift:nrow(trace),], Adam = trace_noams[shift:nrow(trace_noams),]), what = "p", row_nr_shift = shift)
+p4 <- CompareTraces(
+  list(AMS = trace[shift:nrow(trace),], Adam = trace_noams[shift:nrow(trace_noams),]), what = "o", row_nr_shift = shift)
+
+gridExtra::grid.arrange(grobs = list(p1, p2, p3, p4), ncol = 2)
+
+#CompareTraces(list(AMS = trace[50:nrow(trace),], Adam = trace_noams[50:nrow(trace_noams),]))
+
+```
+
+
+## Profiling the implementation{.smaller}
 
 ```{r Profiling r SGD}
 #| cache: true
@@ -444,21 +455,24 @@ set.seed(NULL)
 
 ## C++ implementation
 
-```cpp{code-line-numbers="1-8|9-17|19-20|22-26|28-34|36-46|48-49|51-52"}
+```cpp{code-line-numbers="1-9|10-20|22-26|28-40|42-52|54-67|69-74"}
 Rcpp::List SGD_CPP_PRIMITIVE(
     const arma::mat &design, arma::vec coef, const arma::vec &y,
     const arma::mat &pen_matrix, const double &lambda,
-    const NumericVector &lr, const int &maxiter, int &batch_size,
-    const double &adam_beta1, const double &adam_beta2, const double &adam_eps,
+    const NumericVector &lr, const IntegerVector &batch_size,
+    const int &maxiter, const double &objtarget,
+    const double &beta_1, const double &beta_2, const double &eps,
     const bool &amsgrad,
     const int &seed
 ){
   Rcpp::List coef_list (maxiter);
+  Rcpp::List obj_list (maxiter);
+  double obj;
   arma::vec grad;
   arma::vec rho = vec(coef.n_elem); rho.zeros();
   arma::vec nu = vec(coef.n_elem); nu.zeros();
-  batch_size = std::min<int>(y.n_elem, batch_size);
-  int batches_per_epoch = std::ceil(double(y.n_elem) / batch_size);
+  int batch_size_now;
+  int batches_per_epoch;
   uvec indicies_all, indicies;
   dqrng::dqRNGkind("Xoroshiro128+");
   dqrng::dqset_seed(IntegerVector::create(seed)); // Sets the shuffling seed
@@ -466,10 +480,13 @@ Rcpp::List SGD_CPP_PRIMITIVE(
   for (int i = 0; i < maxiter; i++){
     indicies_all = as<uvec>(dqrng::dqsample_int(y.n_elem, y.n_elem));
 
+    batch_size_now = std::min<int>(y.n_elem, batch_size[i]);
+    batches_per_epoch = std::ceil(double(y.n_elem) / batch_size_now);
+
     for (int b = 0; b < batches_per_epoch; b++){
       indicies = indicies_all.subvec(
-        b * batch_size,
-        std::min<int>((b+1) * batch_size - 1, y.n_elem - 1)
+        b * batch_size_now,
+        std::min<int>((b+1) * batch_size_now - 1, y.n_elem - 1)
       );
 
       grad = lll_gradC(
@@ -480,22 +497,38 @@ Rcpp::List SGD_CPP_PRIMITIVE(
         lambda
         );
 
-      rho = rho * adam_beta1 + grad * (1 - adam_beta1);
+      rho = rho * beta_1 + grad * (1 - beta_1);
       if (amsgrad){
         nu = arma::max(
-          nu * adam_beta2 + pow(grad, 2) * (1 - adam_beta2), nu
+          nu * beta_2 + pow(grad, 2) * (1 - beta_2), nu
         );
       } else {
-        nu = nu * adam_beta2 + pow(grad, 2) * (1 - adam_beta2);
+        nu = nu * beta_2 + pow(grad, 2) * (1 - beta_2);
       }
 
-      coef = coef - lr[i] * rho / (sqrt(nu) + adam_eps);
+      coef = coef - lr[i] * rho / (sqrt(nu) + eps);
     }
 
     coef_list[i] = as<NumericVector>(wrap(coef)); // Breaks mutability of coef
+    obj = lllC(
+      design,
+      coef,
+      y,
+      pen_matrix,
+      lambda
+    );
+    obj_list[i] = 1 * obj;
+
+    if (obj < objtarget){
+      break;
+    }
   }
 
-  return(coef_list);
+  Rcpp::List results (2);
+  results[0] = coef_list;
+  results[1] = obj_list;
+
+  return(results);
 }
 ```
 
@@ -526,22 +559,22 @@ test_that("C++ sgd converges to the right value", {
   batch_size <- 24
   lr <- polynomial_schedule(0.1, 0.001, 50)
   opt <- Adam_Optimizer(
-    lr, beta_1 = 0.9, beta_2 = 0.95, eps = 1e-8, amsgrad = T)
+    lr, batch_size, beta_1 = 0.9, beta_2 = 0.95, eps = 1e-8, amsgrad = T)
 
   for (i in 1:t){
     par_r <- SGD(
-      opt_target, opt, init_param = random_coef[[i]],
-      stop_crit = epochs, batch_size = batch_size, trace_precision = "none",
+      opt_target, opt,
+      init_par = random_coef[[i]],
+      stop_crit = epochs,
       seed = 0
-      ) %>% tail(1)
+      ) %>% tail()
 
     par_c <- SGD_CPP(
-      lll = opt_target,
-      init_coef = random_coef[[i]],
-      lr = lr, beta1 = 0.9, beta2 = 0.95, eps = 1e-8, batch_size = batch_size,
-      stop_crit = epochs, amsgrad = T,
+      opt_target, opt,
+      init_par = random_coef[[i]],
+      stop_crit = epochs,
       seed = 0
-    ) %>% tail(1) %>% unlist()
+    ) %>% tail()
 
     expect_equal(par_c, par_r)
   }
@@ -568,7 +601,7 @@ adam <- Adam_Optimizer(lr, batch_size = floor(nrow(horses)/4))
 
 sgd_r <- function(){
   SGD(
-  opt_target_horses, adam, init_par = rep(0,opt_target$n_param),
+  opt_target_horses, adam, init_par = rep(0,opt_target_horses$n_param),
   stop_crit = 50,
   seed = 0
   ) %>% tail()
@@ -576,7 +609,7 @@ sgd_r <- function(){
 
 sgd_c <- function(){
   SGD_CPP(
-    opt_target_horses, adam, init_par = rep(0,opt_target$n_param),
+    opt_target_horses, adam, init_par = rep(0,opt_target_horses$n_param),
     stop_crit = 50,
     seed = 0
   ) %>% tail()
@@ -592,103 +625,158 @@ microbenchmark::microbenchmark(
 ```
 
 
-## Benchmarking for non-linear regression
-
-```{r Setting up benchmarks cases}
-
-set.seed(3)
-reg <- univariate_logistic_regression(n = 1)
-plot(reg)
-
-n <- 1e6
-x <- runif(n, -1, 1)
-p <- reg$f_true(x)
-y <- rbinom(n, 1, p)
-
-
-nval <- c(7, 11, 15, 19)
-targets <- nval %>% purrr::map(.f = function(i){
-  x_spline <- x[1:2^i] %>% ExpandBspline()
-  x_poly <- x[1:2^i] %>% ExpandPoly()
-  list(
-    x_spline = x_spline,
-    x_poly = x_poly,
-    lll_spline = logistic_loglikelihood(y[1:2^i], x_spline, lambda = 1e-5),
-    lll_poly = logistic_loglikelihood(y[1:2^i], x_poly, lambda = 1e-5)
-  )
-}) %>% magrittr::set_names(paste0("n", 2^nval))
-
-set.seed(NULL)
-
-```
+## Benchmarking for non-linear regression {.smaller}
 
 ```{r Benchmarking}
+#| cache: true
+#| echo: true
 
-decay_fast <- polynomial_schedule(0.1, 0.9, later = 1)
-decay_slow <- polynomial_schedule(0.1, 0.9, later = 1, p = 0.5)
+decay <- polynomial_schedule(1, 0.1, later = 500)
 proportional_batch <- function(f, propto = function(n) n) {
-  function(epoch, n){
-    rep(ceil(propto(n) * f), length(epoch))
+  function(epoch, n, ...){
+    rep(ceiling(propto(n) * f), length(epoch))
   }
 }
 
 optimizers <- list(
-  gd_vanilla_fast = Vanilla_Optimizer(decay_fast, proportional_batch(1)),
-  sgd_vanilla_fast = Vanilla_Optimizer(decay_fast, proportional_batch(1, sqrt)),
-  gd_vanilla_slow = Vanilla_Optimizer(decay_slow, proportional_batch(1)),
-  sgd_vanilla_slow = Vanilla_Optimizer(decay_slow, proportional_batch(1, sqrt)),
-  gd_adam_fast = Adam_Optimizer(decay_fast, proportional_batch(1)),
-  sgd_adam_fast = Adam_Optimizer(decay_fast, proportional_batch(1, sqrt)),
-  gd_adam_slow = Adam_Optimizer(decay_slow, proportional_batch(1)),
-  sgd_adam_slow = Adam_Optimizer(decay_slow, proportional_batch(1, sqrt))
+  gd_vanilla = Vanilla_Optimizer(decay, proportional_batch(1)),
+  sgd_vanilla = Vanilla_Optimizer(decay, proportional_batch(1, sqrt)),
+  gd_momentum = Momentum_Optimizer(decay, proportional_batch(1)),
+  sgd_momentum = Momentum_Optimizer(decay, proportional_batch(1, sqrt)),
+  gd_adam = Adam_Optimizer(decay, proportional_batch(1)),
+  sgd_adam = Adam_Optimizer(decay, proportional_batch(1, sqrt))
 )
 
-lr <- polynomial_schedule(1, 0.1, later = 300)
-adam <- Vanilla_Optimizer(lr)
-trace1 <- SGD_CPP(
-  targets[[1]]$lll_spline, adam,
-  seed = 0, stop_crit = 300, batch_size = 100
-  )
-trace2 <- SGD_CPP(
-  targets[[1]]$lll_spline, adam,
-  seed = 1, stop_crit = 300, batch_size = 50
-  )
+set.seed(0)
+data("horses")
+design_spline <- horses$Temperature %>% ExpandBspline()
+design_poly <- horses$Temperature %>% ExpandBspline()
+opt_spline <- logistic_loglikelihood(
+  horses$dead, design = design_spline, lambda = 1e-5)
+opt_poly <- logistic_loglikelihood(
+  horses$dead, design = design_poly, lambda = 1e-5)
 
-CompareTraces(list(LargeBatch = trace1, SmallBatch = trace2, Dup1 = trace1, Dupe2 = trace2), "po")
+baseline_trace <- SGD_CPP(
+      opt_spline, optimizers$gd_vanilla, stop_crit = 200, seed = 0)
+baseline <- baseline_trace %>% tail("o")
+sc <- stopping_criterion(maxiter = 5e2, threshhold_obj = baseline)
 
-plot(trace)
-
-plot(targets[[1]]$x_spline, trace %>% tail("p"))
-
-trace %>% 
-  dplyr::select(obj) %>% 
-  dplyr::mutate(iter = dplyr::row_number()) %>% 
-  ggplot2::ggplot(ggplot2::aes(x = iter, y = obj)) +
-  ggplot2::geom_line()
-
-trace %>% 
-  dplyr::mutate(iter = dplyr::row_number()) %>% 
-  tidyr::pivot_longer(cols = -iter, names_to = "parameter", values_to = "value") %>% 
-  ggplot2::ggplot(ggplot2::aes(x = iter, y = value, color = parameter)) +
-  ggplot2::geom_line()
-
-plot(targets[[1]]$x_spline, trace %>% tail(1) %>% unlist(), post_transform = function(x) exp(x) / (1 + exp(x)))
-
-ggplot2::ggplot(mapping = ggplot2::aes(x = x[1:32768], y = y[1:32768])) +
-  ggplot2::geom_smooth(method = "gam")
-
+mb <- microbenchmark::microbenchmark(
+  SGD_CPP(opt_spline, optimizers$gd_vanilla, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_poly, optimizers$gd_vanilla, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_spline, optimizers$sgd_vanilla, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_poly, optimizers$sgd_vanilla, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_spline, optimizers$gd_momentum, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_poly, optimizers$gd_momentum, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_spline, optimizers$sgd_momentum, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_poly, optimizers$sgd_momentum, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_spline, optimizers$gd_adam, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_poly, optimizers$gd_adam, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_spline, optimizers$sgd_adam, stop_crit = sc, seed = 0),
+  SGD_CPP(opt_poly, optimizers$sgd_adam, stop_crit = sc, seed = 0),
+  times = 50
+)
 ```
 
+## Benchmark results
 
+```{r Display Benchmark results}
+mb %>% ggplot2::autoplot()
+```
 
+## Calculating $\Omega$ for a cubic spline basis {.smaller}
+To calculate the penalty matrix, we should evaluate
+$$
+\Omega_{ij} = \int_{-\infty}^{\infty} \varphi_i''(x)\varphi_j''(x)dx = \sum_{m = 1}^{n} \int_{k_{m-1}}^{k_m} \varphi_i''(x)\varphi_j''(x) dx := \sum_{m = 1}^{n} \int_{k_{m-1}}^{k_m} g_{ij}(x) dx
+$$
+Where we used that we don't care to penalize outside the boundary knots $k_0$ and $k_m$. This could for example be achieved by using natural splines.
 
+Note that for $\varphi_i$ a 3-degree spline, $\varphi_i$ is linear between any two knots $k_{m-1}$, $k_{m}$ and thus $g_{ij}$ is a quadratic on this interval. Hence the Simpson-integration rule
+$$
+\int_a^b g_{ij}(x)dx = \frac{b-a}{6}\left(g_{ij}(a) + 4g_{ij}\left(\frac{a+b}{2}\right) + g_{ij}(b)\right)
+$$
+is an exact equality.
 
-## TODO
-- Show off the R implementation of SGD and logistic likelihood - Yes
-- Show off the OO side of things (focus on basis expansions) - Yes
-- Profile the R implementation - Yes
-- Show off the C++ implementation - Yes
-- Show off the unit tests - Yes
-- Benchmark the C++ implementation
+## Calculating $\Omega$ for a polynomial basis {.smaller}
+Letting
+
+$$
+\varphi_i(x) = x^i
+$$
+
+For $i,j > 1$ we get
+$$
+\Omega_{ij} = \int_0^1 \varphi_i''(x)\varphi_j''(x)dx = ij(i-1)(j-1)\int_0^1 x^{i+j-4}dx = \frac{ij(i-1)(j-1)}{i+j-3}
+$$
+
+And for $i,j \leq 2$ we get $\Omega_{ij} = 0$.
+
+## Stopping criteria{.scrollable}
+
+```r
+stopping_criterion <- function(
+    maxiter = 50,
+    tol_obj = NULL,
+    threshhold_obj = -Inf,
+    norm_obj = function(x) sum(x),
+    tol_param = NULL,
+    norm_param = function(x) sqrt(sum(x^2))
+   ){
+
+  # If stopping_criterion is called on a CompStatStoppingCriterion, do nothing
+  if (class(maxiter) %in% c("CompStatStoppingCriterion")){
+    return(maxiter)
+  }
+
+  stopper <- function(
+    epoch,
+    param = NULL, param_old = NULL,
+    obj = NULL, obj_old = NULL){
+
+    # Check maxiter criterion
+    if (maxiter <= epoch){
+      return(TRUE)
+    }
+
+    # Check criteria on parameter
+    if (!is.null(param) & !is.null(param_old)){
+      if (!is.null(tol_param)){
+        if (norm_param(param - param_old) <= tol_param * (norm_param(param_old) + tol_param)){
+          return(TRUE)
+        }
+      }
+    }
+
+    # Check criterion on objective
+    if (!is.null(obj) & !is.null(obj_old)){
+      if (!is.null(tol_obj)){
+        if (norm_param(obj_old - obj) <= tol_obj * (norm_param(obj_old) + tol_obj)){
+          return(TRUE)
+        }
+      }
+    }
+
+    # Check if objective is small enough
+    if (!is.null(obj)){
+      if (obj < threshhold_obj){
+        return(TRUE)
+      }
+    }
+
+    return(FALSE)
+  }
+
+  structure(list(
+    check = stopper,
+    maxiter = maxiter,
+    tol_obj = tol_obj,
+    tol_param = tol_param,
+    threshhold_obj = threshhold_obj
+    ),
+    class = "CompStatStoppingCriterion"
+  )
+}
+```
+
 
 

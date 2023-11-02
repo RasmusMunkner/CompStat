@@ -31,9 +31,7 @@ SGD <- function(
   dqrng::dqset.seed(seed)
 
   # Ensure stopping criterion is valid
-  if (!(class(stop_crit) %in% c("CompStatStoppingCriterion"))){
-    stop_crit <- stopping_criterion(maxiter = stop_crit)
-  }
+  stop_crit <- stopping_criterion(stop_crit)
 
   # Determine optimizer
   if (!(class(optimizer) %in% c("CompStatOptimizer"))){
@@ -177,6 +175,10 @@ SGD_CPP <- function(
     seed = NULL
     ){
 
+  if (is.null(seed)){
+    stop("Seed must be set for CPP implementation.")
+  }
+
   # Check that the objective is a logistic loglikelihood
   if (!("CompStatLogisticLogLikelihood" %in% class(lll))){
     stop(paste0("Input lll must be of class 'CompStatLogisticLogLikelihood'."))
@@ -192,7 +194,7 @@ SGD_CPP <- function(
 
   # Call learning rate and batch size
   lr <- optimizer$lr(1:stop_crit$maxiter)
-  batch_size <- optimizer$batch_size(1:stop_crit$maxiter, n = optimizable$n_index)
+  batch_size <- optimizer$batch_size(1:stop_crit$maxiter, n = lll$n_index)
 
   # If nothing else is specified, initialize all parameters to 0
   if (is.null(init_par)){
@@ -218,6 +220,7 @@ SGD_CPP <- function(
     )
 
   trace[[1]] %>%
+    purrr::keep(.p = function(x) !is.null(x)) %>%
     purrr::map_dfr(.f = function(x) x %>% as.vector() %>% setNames(paste0("p", seq_along(init_par)))) %>%
     cbind(data.frame(obj = trace[[2]] %>% unlist(use.names = F))) %>%
     magrittr::set_class(c("CompStatTrace", class(.)))
