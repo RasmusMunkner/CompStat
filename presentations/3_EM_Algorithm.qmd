@@ -5,6 +5,8 @@ format: revealjs
 slide-number: c/t
 ---
 
+## Packages
+
 ```{r Loading libraries}
 #| echo: true
 
@@ -14,7 +16,7 @@ library(microbenchmark) # Benchmarking
 
 ```
 
-## Mixtures of T-distributions
+## Mixtures of T-distributions {style="font-size: 50%"}
 We consider general mixtures of $t(\mu,\sigma,\nu)$-distributed variables with
 joint density
 
@@ -37,24 +39,21 @@ E_{\theta'}\left[\log \left(\frac{\Gamma((\nu_Z + 1)/2)}{\sqrt{\pi\nu_Z}\Gamma(\
 p_i'(y) = P(Z = i \mid Y = y, \theta') = f(Y=y \mid Z = i, \theta')\frac{P(Z=i \mid \theta')}{\sum_{j = 1}^K f(y \mid Z = j, \theta')P(Z = j \mid \theta')}
 $$
 
-We will assume that $\nu$ is known and will thus have to maximize this for $(p,\mu,\sigma)$. Differentiating we find
+We will assume that $\nu$ is known and will thus have to maximize this for $(p,\mu,\sigma)$.
+
+## Gradient {style="font-size: 50%"}
+
+Differentiating we find
 
 $$
 \frac{\partial}{\partial\mu_i}Q(\theta \mid \theta') =
 \frac{(\nu_i + 1)(y-\mu_i)}{\nu_i\sigma_i^2 + (y-\mu_i)^2}p_i'(y) \\
-
 \frac{\partial}{\partial\sigma_i^2}Q(\theta \mid \theta') =
 \left(-\frac{1}{2\sigma_i^2} - \frac{1}{2}(\nu_i + 1)\frac{1}{1 + \frac{(y-\mu_i)^2}{\nu_i\sigma_i^2}} \frac{-(y-\mu_i)^2}{\nu_i(\sigma_i^2)^2}\right)p_i'(y) = \\
 -\frac{1}{2\sigma_i^2}\left(1 - \frac{(\nu_i + 1)(y-\mu_i)^2}{\nu_i\sigma_i^2 + (y-\mu_i)^2}\right)p_i'(y)
 $$
 
-For simplifying the deriviations wrt. $p$, introduce
-$$
-p_i = \frac{e^{\beta_i}}{\sum_{j=1}^Ke^{\beta_j}} = \frac{1}{\sum_{j=1}^K e^{\beta_j - \beta_i}} \quad , \quad \log p_i = \beta_i - \log\left(\sum_{j=1}^K e^{\beta_j}\right) \quad , \quad \frac{d}{d\beta_i} \log p_i = 1 - \frac{e^{\beta_i}}{\sum_{j=1}^K e^{\beta_j}} = 1 - p_i \\
-\frac{d}{d\beta_i} \log p_j = \frac{e^{\beta_i}}{\sum_{\ell=1}^K e^{\beta_\ell}} = -p_i
-$$
-
-Now
+Also
 
 $$
 \frac{\partial}{\partial p_i} Q(\theta \mid \theta') =
@@ -62,6 +61,8 @@ $$
 \frac{p_i'(y)}{p_i} - \frac{p_K'(y)}{p_k}
 $$
 
+## Summarising {style="font-size: 50%"}
+Summing over observations
 
 $$
 \frac{\partial}{\partial \mu_i}Q_N(\theta \mid \theta') =
@@ -71,8 +72,55 @@ $$
 \frac{\partial}{\partial p_i}Q_N(\theta \mid \theta') = \sum_{n = 1}^N \left(\frac{p_i'(y_n)}{p_i} - \frac{p_K'(y_n)}{p_k}\right) = \frac{1}{p_i}\sum_{n=1}^N p_i'(y_n) - \frac{1}{p_K}\sum_{n=1}^N p_K'(y_n)
 $$
 
+## Likelihood
+It may be useful to also derive the gradient of the loglikelihood
+
+$$
+\ell(\theta) = \sum_{n=1}^N \ell_n(\theta) \\
+\ell_n(\theta) = \log\left(\sum_{k=1}^K p_k f(y_n \mid \mu_k, \sigma_k^2, \nu_k)\right) \\
+\frac{\partial}{\partial \mu_i}\ell_n(\theta) =
+\frac{1}{\exp \ell_n(\theta)} p_i \frac{\Gamma((\nu_i+1)/2)}{\sqrt{\pi \nu_i}\Gamma(\nu_i/2)}\frac{1}{\sqrt{\sigma_i^2}}\left(-(\nu_i+1)/2\right)\left(1 + \frac{(y_n-\mu_i)^2}{\nu_i\sigma_i^2}\right)^{-(\nu_i-1)/2} \left(\frac{x_n-\mu_i}{\nu_i\sigma_i^2}\right)
+$$
+
+Okay, this is not gonna work.
+
+## Implementing the Q-function
+Here goes code with the implementation --- (can do)
+
+## Testing the partial derivatives
+Here goes code for test --- (can do)
+
+## Implementing the M-step
+Here goes code for SGD --- (brief) (can do)
+
+## Testing the algorithm
+Here goes code for unit test --- (can do, requires work)
+
+## Estimating the Fisher information
+We have several ways to compute the Fisher information. We rely on the following
+
+$$
+\hat{i}_X = -D_{\bar{\theta}}(\nabla_\theta Q(\bar{\theta} \mid \bar{\theta})) \mid_{\bar{\theta}=\hat{\theta}} \\
+\hat{i}_X = -D_\theta^2 Q(\hat{\theta} \mid \hat{\theta}) - D_{\theta'}\nabla_\theta Q(\hat{\theta} \mid \hat{\theta})
+$$
+
+Both of these are implemented via *numDeriv*.
 
 
+## Checking that the Fisher information is correct
+(can do, not happy about it)
+
+## Profiling the algorithm
+(can do, rquires work)
+
+## C++ part
+(idk)
+
+## Benchmark
+(idk)
+
+## Benchmark against something else??
+(nah)
 
 
 ## TODO
@@ -83,14 +131,6 @@ $$
 - Implement Fisher information calc
 - Consider the issue with contaminated Gaussians
 
-```{r}
 
-
-?rt
-
-
-
-
-```
 
 

@@ -61,7 +61,7 @@ SGD <- function(
     valid_flags <- optimizable$check_par_validity(init_par)
     if (!valid_flags$p){
       where_p <- optimizable$par_alloc == "p"
-      init_par[where_p] <- 1 / sum(where_p) # Uniform
+      init_par[where_p] <- 1 / (1+sum(where_p)) # Uniform
     }
     if (!valid_flags$sigma2){
       where_sigma2 <- optimizable$par_alloc == "sigma2"
@@ -71,7 +71,7 @@ SGD <- function(
       where_nu <- optimizable$par_alloc == "nu"
       init_par[where_nu] <- 1 + rexp(sum(where_nu), 1)
     }
-    optimizable$update_w(init_par)
+    optimizable$set_w(init_par)
   }
 
   par_next <- init_par
@@ -133,6 +133,13 @@ SGD <- function(
       trace[epoch+1,] <- c(par_next, obj_next)
     }
 
+    # If the Q-function improved over the epoch, update the underlying par
+    if (EM_flag){
+      if (obj_next < obj_before){
+        optimizable$set_w(par_next)
+      }
+    }
+
     # Check if stopping criterion is fulfilled
     if (stop_crit$check(
       epoch,
@@ -142,22 +149,24 @@ SGD <- function(
       obj_old = obj_before
     )
     ){
-      return(
-        if (tracing){
-          trace %>%
-            magrittr::set_colnames(c(paste0("p", 1:optimizable$n_param), "obj")) %>%
-            as.data.frame() %>%
-            magrittr::set_class(c("CompStatTrace", class(.))) %>%
-            return()
-        } else {
-          c(par_next, obj_next) %>%
-            matrix(nrow = 1) %>%
-            magrittr::set_colnames(c(paste0("p", 1:optimizable$n_param), "obj")) %>%
-            as.data.frame() %>%
-            return()
-        }
 
-      )
+      if (EM_flag){
+        names <- c(names(par_next), "obj")
+      } else {
+        names <- c(paste0("p", 1:optimizable$n_param), "obj")
+      }
+
+        if (tracing){
+          return(trace %>%
+            magrittr::set_colnames(names) %>%
+            as.data.frame() %>%
+            magrittr::set_class(c("CompStatTrace", class(.))))
+        } else {
+          return(c(par_next, obj_next) %>%
+            matrix(nrow = 1) %>%
+            magrittr::set_colnames(names) %>%
+            as.data.frame())
+        }
     }
   }
 

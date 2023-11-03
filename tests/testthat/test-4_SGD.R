@@ -97,15 +97,26 @@ test_that("C++ sgd converges to the right value", {
 
 test_that("EM algorithm works", {
 
-  p <- c(0.25, 0.75)
-  mu <- c(-10, 10)
-  sigma2 <- c(1, 1)
-  nu <- c(2, 10)
-  y <- rtmix(10000, p, mu, sigma2, nu)
 
-  Estep <- Estep_Factory_tmix(y, n_components = 2)
+  theta <- list(
+    p = c(0.25),
+    mu = c(-10,10),
+    sigma2 = c(1,9),
+    nu = c(2,10)
+  )
+  theta_prime <- list(
+    p = c(0.5),
+    mu = c(-6,12),
+    sigma2 = c(4,4),
+    nu = c(2,10)
+  )
 
-  #Estep$plotdens(c(p, mu, sigma2, nu), xx = seq(-30, 30, 0.01))
+  y <- rtmix(10000, theta$p, theta$mu, theta$sigma2, theta$nu)
+  #y <- rtmix(50, theta$p, theta$mu, theta$sigma2, theta$nu)
+
+  Estep <- Estep_Factory_tmix(y, init_par = theta_prime, n_components = 2)
+
+  plot(Estep)
 
   lr <- polynomial_schedule(1e-1, 1e-2, 500)
   opt <- Adam_Optimizer(lr = lr, batch_size = ceiling(sqrt(length(y))))
@@ -114,14 +125,27 @@ test_that("EM algorithm works", {
     Estep,
     opt,
     stop_crit = sc,
-    init_par = c(c(NA, NA), c(-9, 9), c(1, 1), c(2,10))#c(0.5, 0.5, 0, 10, 1, 2, 2, 10)
+    init_par = c(
+      c(0.5), quantile(y, probs = c(0.25, 0.75)),
+      c(2, 3), c(2,10)) %>% setNames(unlist(theta) %>% names())
   )
 
   plot(trace)
 
+  plot(Estep)
+
   optpar <- trace %>% tail() %>% magrittr::set_names(Estep$par_alloc)
 
-  Estep$plotdens(optpar, xx = seq(-30, 30, 0.01))
+  second_trace <- SGD(
+    Estep,
+    opt,
+    stop_crit = 100,
+    init_par = trace %>% tail()
+  )
+
+  plot(second_trace)
+
+  optpar_2 <- second_trace %>% tail() %>% magrittr::set_names(Estep$par_alloc)
 
 })
 
