@@ -27,6 +27,9 @@ SGD <- function(
     seed = NULL
     ){
 
+  # Enable compatibility with EM algorithm
+  EM_flag <- ("CompStatQfunc" %in% class(optimizable))
+
   dqrng::dqRNGkind("Xoroshiro128+")
   dqrng::dqset.seed(seed)
 
@@ -51,6 +54,26 @@ SGD <- function(
     init_par <- rep(0, optimizable$n_param)
   }
   init_par <- init_par %>% dplyr::coalesce(0)
+
+  # Reasonable defaults for EM algorithm
+  # Note they are random to ensure algorithm is not stuck
+  if (EM_flag){
+    valid_flags <- optimizable$check_par_validity(init_par)
+    if (!valid_flags$p){
+      where_p <- optimizable$par_alloc == "p"
+      init_par[where_p] <- 1 / sum(where_p) # Uniform
+    }
+    if (!valid_flags$sigma2){
+      where_sigma2 <- optimizable$par_alloc == "sigma2"
+      init_par[where_sigma2] <- 1 + rexp(sum(where_sigma2), 1)
+    }
+    if (!valid_flags$nu){
+      where_nu <- optimizable$par_alloc == "nu"
+      init_par[where_nu] <- 1 + rexp(sum(where_nu), 1)
+    }
+    optimizable$update_w(init_par)
+  }
+
   par_next <- init_par
   obj_next <- optimizable$objective(init_par)
 
@@ -79,15 +102,29 @@ SGD <- function(
     # Apply minibatch gradient updates
     for (b in 1:batches_per_epoch){
 
-      par_now <- par_next
-
       grad <- optimizable$grad(
-        par_now,
+        par_before,
         index_permutation[(1+(b-1)*batch_size):
                             min(b*batch_size, optimizable$n_index)]
       )
 
-      par_next <- par_now - opt$lr(epoch) * opt$update_param(grad)
+      update <- opt$lr(epoch) * opt$update_param(grad)
+
+      if (EM_flag){ # Checks that parameter values are within the allowed limits
+        tmp_par_next <- par_before - update
+        for (attempt in 1:20){
+          check <- optimizable$check_par_validity(tmp_par_next) %>% unlist()
+          if (all(check)){
+            par_next <- tmp_par_next
+            break
+          }
+          tmp_par_next <- (tmp_par_next + par_before) / 2
+        }
+      } else {
+
+        par_next <- par_before - update
+
+      }
     }
 
     # Tracing and keep track of objective function

@@ -1,0 +1,96 @@
+---
+title: "EM Algorithm"
+author: "Rasmus V. Munkner"
+format: revealjs
+slide-number: c/t
+---
+
+```{r Loading libraries}
+#| echo: true
+
+library(CompStat) # My implementation is bundled as a package
+library(testthat) # For formal testing
+library(microbenchmark) # Benchmarking
+
+```
+
+## Mixtures of T-distributions
+We consider general mixtures of $t(\mu,\sigma,\nu)$-distributed variables with
+joint density
+
+$$
+f(y,z \mid \theta) = f(y \mid Z = z, \theta)p(Z = z \mid \theta) = f_{\mu_z, \sigma_z, \nu_z}(y)\cdot p_z
+$$
+
+Thus
+
+$$
+\log(f(Y,Z \mid \theta)) = \log f_{\mu_Z, \sigma_Z, \nu_Z}(Y) + \log p_Z = \\
+\log \left(\frac{\Gamma((\nu_Z + 1)/2)}{\sqrt{\pi\nu_Z}\Gamma(\nu_Z/2)}\right) - \frac{1}{2}\log(\sigma_Z^2) - \frac{1}{2}(\nu_Z + 1)\log\left(1 + \frac{(Y-\mu_Z)^2}{\nu_Z\sigma_Z^2}\right) + \log p_Z
+$$
+
+Letting $\theta = (\mu_1, \ldots , \nu_K, p_1, \ldots, p_K)$, the Q-function is
+$$
+Q(\theta \mid \theta') = E_{\theta'}[\log f(Y,Z \mid \theta) \mid  Y = y] = \\
+E_{\theta'}\left[\log \left(\frac{\Gamma((\nu_Z + 1)/2)}{\sqrt{\pi\nu_Z}\Gamma(\nu_Z/2)}\right) - \frac{1}{2}\log(\sigma_Z^2) - \frac{1}{2}(\nu_Z + 1)\log\left(1 + \frac{(Y-\mu_Z)^2}{\nu_Z\sigma_Z^2}\right) + \log p_Z \mid Y = y\right] = \\
+\sum_{i=1}^K \left(\log \left(\frac{\Gamma((\nu_i + 1)/2)}{\sqrt{\pi\nu_i}\Gamma(\nu_i/2)}\right) - \frac{1}{2}\log(\sigma_i^2) - \frac{1}{2}(\nu_i + 1)\log\left(1 + \frac{(y-\mu_i)^2}{\nu_i\sigma_i^2}\right) + \log p_i\right)p_i'(y) \\
+p_i'(y) = P(Z = i \mid Y = y, \theta') = f(Y=y \mid Z = i, \theta')\frac{P(Z=i \mid \theta')}{\sum_{j = 1}^K f(y \mid Z = j, \theta')P(Z = j \mid \theta')}
+$$
+
+We will assume that $\nu$ is known and will thus have to maximize this for $(p,\mu,\sigma)$. Differentiating we find
+
+$$
+\frac{\partial}{\partial\mu_i}Q(\theta \mid \theta') =
+\frac{(\nu_i + 1)(y-\mu_i)}{\nu_i\sigma_i^2 + (y-\mu_i)^2}p_i'(y) \\
+
+\frac{\partial}{\partial\sigma_i^2}Q(\theta \mid \theta') =
+\left(-\frac{1}{2\sigma_i^2} - \frac{1}{2}(\nu_i + 1)\frac{1}{1 + \frac{(y-\mu_i)^2}{\nu_i\sigma_i^2}} \frac{-(y-\mu_i)^2}{\nu_i(\sigma_i^2)^2}\right)p_i'(y) = \\
+-\frac{1}{2\sigma_i^2}\left(1 - \frac{(\nu_i + 1)(y-\mu_i)^2}{\nu_i\sigma_i^2 + (y-\mu_i)^2}\right)p_i'(y)
+$$
+
+For simplifying the deriviations wrt. $p$, introduce
+$$
+p_i = \frac{e^{\beta_i}}{\sum_{j=1}^Ke^{\beta_j}} = \frac{1}{\sum_{j=1}^K e^{\beta_j - \beta_i}} \quad , \quad \log p_i = \beta_i - \log\left(\sum_{j=1}^K e^{\beta_j}\right) \quad , \quad \frac{d}{d\beta_i} \log p_i = 1 - \frac{e^{\beta_i}}{\sum_{j=1}^K e^{\beta_j}} = 1 - p_i \\
+\frac{d}{d\beta_i} \log p_j = \frac{e^{\beta_i}}{\sum_{\ell=1}^K e^{\beta_\ell}} = -p_i
+$$
+
+Now
+
+$$
+\frac{\partial}{\partial p_i} Q(\theta \mid \theta') =
+\frac{\partial}{\partial p_i}\left(\left(\sum_{j=1}^{K-1} \log p_jp_j'(y)\right) + p_K'(y)\log\left(1 - \sum_{j=1}^{K-1}p_j\right)\right) =
+\frac{p_i'(y)}{p_i} - \frac{p_K'(y)}{p_k}
+$$
+
+
+$$
+\frac{\partial}{\partial \mu_i}Q_N(\theta \mid \theta') =
+\sum_{n = 1}^N \frac{(\nu_i + 1)(y_n-\mu_i)}{\nu_i\sigma_i^2 + (y_n-\mu_i)^2}p_i'(y_n) \\
+\frac{\partial}{\partial \sigma_i^2}Q_N(\theta \mid \theta') =
+-\frac{1}{2\sigma_i^2}\sum_{n=1}^N\left(1 - \frac{(\nu_i + 1)(y_n-\mu_i)^2}{\nu_i\sigma_i^2 + (y_n-\mu_i)^2}\right)p_i'(y_n) \\
+\frac{\partial}{\partial p_i}Q_N(\theta \mid \theta') = \sum_{n = 1}^N \left(\frac{p_i'(y_n)}{p_i} - \frac{p_K'(y_n)}{p_k}\right) = \frac{1}{p_i}\sum_{n=1}^N p_i'(y_n) - \frac{1}{p_K}\sum_{n=1}^N p_K'(y_n)
+$$
+
+
+
+
+
+## TODO
+- Implement simulation from mixed t
+- Implement Q, dQ
+- Implement EM algorithm
+- Implement an alternative to EM (use SGD)
+- Implement Fisher information calc
+- Consider the issue with contaminated Gaussians
+
+```{r}
+
+
+?rt
+
+
+
+
+```
+
+

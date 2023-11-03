@@ -95,6 +95,36 @@ test_that("C++ sgd converges to the right value", {
   set.seed(NULL)
 })
 
+test_that("EM algorithm works", {
+
+  p <- c(0.25, 0.75)
+  mu <- c(-10, 10)
+  sigma2 <- c(1, 1)
+  nu <- c(2, 10)
+  y <- rtmix(10000, p, mu, sigma2, nu)
+
+  Estep <- Estep_Factory_tmix(y, n_components = 2)
+
+  #Estep$plotdens(c(p, mu, sigma2, nu), xx = seq(-30, 30, 0.01))
+
+  lr <- polynomial_schedule(1e-1, 1e-2, 500)
+  opt <- Adam_Optimizer(lr = lr, batch_size = ceiling(sqrt(length(y))))
+  sc <- stopping_criterion(100)
+  trace <- SGD(
+    Estep,
+    opt,
+    stop_crit = sc,
+    init_par = c(c(NA, NA), c(-9, 9), c(1, 1), c(2,10))#c(0.5, 0.5, 0, 10, 1, 2, 2, 10)
+  )
+
+  plot(trace)
+
+  optpar <- trace %>% tail() %>% magrittr::set_names(Estep$par_alloc)
+
+  Estep$plotdens(optpar, xx = seq(-30, 30, 0.01))
+
+})
+
 
 
 
