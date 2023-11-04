@@ -1,8 +1,5 @@
 
 
-
-
-
 test_that("reparametrized t-mixtures work", {
 
   set.seed(0)
@@ -88,6 +85,33 @@ test_that("Gradients are correct", {
   B <- Qfunc$grad(t0)
 
   expect_equal((A-B) %>% magrittr::set_names(NULL), rep(0, length(A)))
+
+  set.seed(NULL)
+
+})
+
+test_that("fisher information is calculated correctly", {
+
+  set.seed(0)
+  t <- list(
+    be = c(0.2, 0.4) %>% p_() %>% inverse_softmax() %>% `[`(-length(.)),
+    mu = c(-3, 1, 8),
+    kp = log(c(1, 8, 2)),
+    nu = c(2, 3, 6)
+  ) %>% unlist()
+  Qfunc <- EstepReparam(0, t)
+  y <- rtmix(1e4, Qfunc$get$p(t), Qfunc$get$mu(t),
+             Qfunc$get$s2(t), Qfunc$get$nu(t))
+  Qfunc <- EstepReparam(y, t) # Wraps the previously shown implementations
+
+  A <- Qfunc$fisher(t, method = 1)
+
+  B <- Qfunc$fisher(t, method = 2)
+
+  C <- Qfunc$fisher(t, method = 3)
+
+  expect_equal(A, B)
+  expect_equal(max(abs(A - C)) < 1, TRUE) # Not exact for finite data
 
   set.seed(NULL)
 

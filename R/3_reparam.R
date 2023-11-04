@@ -290,7 +290,7 @@ EstepReparam <- function(y, init_par, K = ceiling(length(init_par) / 4), cache_b
                numDeriv::jacobian(AsymGradMLE, v_mle))
     }
 
-    if (method == 3){
+    if (method == 4){
       gradmat <- list(
         dp(v_mle, v_mle, index, sum = F),
         dmu(v_mle, v_mle, index, sum = F),
@@ -309,7 +309,7 @@ EstepReparam <- function(y, init_par, K = ceiling(length(init_par) / 4), cache_b
       )
     }
 
-    if (method == 4){
+    if (method == 3){
       return(-optimHess(v_mle, loglikelihood))
     }
 
@@ -331,7 +331,6 @@ EstepReparam <- function(y, init_par, K = ceiling(length(init_par) / 4), cache_b
     f_y_by_z = f_y_by_z,
     cond_p = cond_p_wrapper,
     fisher = fisher,
-    check_par = check_par,
     get = list(p = p, mu=mu, s2 = s2, nu = nu),
     n_param = 4 * K - 1,
     K = K,

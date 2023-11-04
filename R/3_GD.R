@@ -19,12 +19,12 @@ GD <- function(
     optimizable,
     init_par = NULL,
     stop_crit = 50,
-    d = 0.7,
-    gamma0 = 0.01,
-    c = 1,
+    d = 0.98,
+    gamma = 1,
     tracing = T,
     em_update_tol = 1,
-    debug = F
+    debug = F,
+    ...
     ){
 
   if (debug){
@@ -65,19 +65,14 @@ GD <- function(
     par_before <- par_next
     obj_before <- obj_next
 
-    grad <- optimizable$grad(par_before) / optimizable$n_index
-    gamma <- gamma0
-    for (attempt in 1:20){
-      par_next <- par_before - c * gamma * grad
+    grad <- optimizable$grad(par_before, ...) / optimizable$n_index
+    while (gamma > 1e-9){
+      par_next <- par_before - gamma * grad
       obj_next <- optimizable$objective(par_next)
       if (obj_next < obj_before){
         break
       } else {
         gamma <- gamma * d
-      }
-      if (attempt == 20){
-        warning("Line search did not succed. Consider choosing a smaller d.")
-        return(trace[1:epoch,])
       }
     }
 

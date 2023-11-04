@@ -88,11 +88,125 @@ $$
 \frac{\partial}{\partial \beta_i}Q_N(\theta \mid \theta') = \sum_{n = 1}^N \left(p_i'(y_n) - p_i\right) = \sum_{n=1}^N p_i'(y_n) - Np_i
 $$
 
-## Implementing the Q-function
-Here goes code with the implementation --- (can do)
+## Implementing the Q-function{.smaller}
+
+```r{code-line-numbers="1-9|11-14|16-20|23|34|45|53-60"}
+# Conditional marginal density Y
+  f_y_by_z <- function(w, index = 1:length(y), y0 = y){
+    1:K %>%
+      purrr::map(.f = function(k){
+        dt((y0[index] - mu(w, k))/sqrt(s2(w, k)), df=nu(w,k))/sqrt(s2(w, k))
+      }) %>%
+      purrr::reduce(.f = cbind) %>%
+      magrittr::set_colnames(NULL)
+  }
+
+  # Unconditional marginal density Y
+  f_y <- function(w, index = 1:length(y), y0 = y){
+    (f_y_by_z(w, index, y0) %*% p(w)) %>% as.vector()
+  }
+
+# Conditional densities for Z
+cond_pR <- function(w, index = 1:length(y), y0 = y){
+  (outer(1 / f_y(w, index, y0), p(w)) * f_y_by_z(w, index, y0)) %>%
+    magrittr::set_colnames(paste0("p", 1:K))
+}
+
+# Gradient with respect to mu
+dmu <- function(v, w, index = 1:length(y), y0 = y, sum = T, cache = cache_by_default){
+  mudiff <- outer(y0[index], 1:K, function(y, k){
+    (nu(v,k)+1)*(y - mu(v,k)) / (nu(v,k) * s2(v,k) + (y - mu(v,k))^2)
+  })
+  if (sum){
+    colSums(mudiff * cond_p_wrapper(w, index, y0, cache=cache)) %>% magrittr::set_names(paste0("mu", 1:K))
+  } else {
+    mudiff * cond_p_wrapper(w, index, y0, cache=cache) %>% magrittr::set_names(paste0("mu", 1:K))
+  }
+}
+
+dkappa <- function(v, w, index = 1:length(y), y0 = y, sum = T, cache = cache_by_default){
+  kappadiff <- outer(y0[index], 1:K, function(y, k){
+    (1 - (nu(v,k)+1)*(y - mu(v,k))^2 / (nu(v,k) * s2(v,k) + (y - mu(v,k))^2)) / (-2)
+  })
+  if (sum){
+    colSums(kappadiff * cond_p_wrapper(w, index, y0, cache=cache)) %>% magrittr::set_names(paste0("kappa", 1:K))
+  } else {
+    kappadiff * cond_p_wrapper(w, index, y0, cache=cache) %>% magrittr::set_names(paste0("kappa", 1:K))
+  }
+}
+  
+dbeta <- function(v, w, index = 1:length(y), y0 = y, sum = T, cache = cache_by_default){
+  if (sum){
+    (colSums(cond_p_wrapper(w, index, y0, cache=cache)) - length(index) * p(v))[-K]
+  } else{
+    (cond_p_wrapper(w, index, y0, cache=cache) - matrix(rep(p(v), length(index)), nrow = length(index)))[,-K]
+  }
+}
+
+dQ <- function(v, w, index = 1:length(y), y0 = y, cache = cache_by_default, mode = "r"){
+  if (mode == "r"){
+    -c(
+      dbeta(v, w, index, y0, cache=cache),
+      dmu(v, w, index, y0, cache=cache),
+      dkappa(v, w, index, y0, cache=cache),
+      rep(0, K)
+    ) %>%
+      magrittr::set_names(names(memory_w))
+  } else if (mode == "c"){
+    v_cpar <- c(p(v), mu(v), s2(v), nu(v))
+    w_cpar <- c(p(w), mu(w), s2(w), nu(w))
+    dQC(v_cpar, w_cpar, y0[index]) %>%
+      magrittr::multiply_by(-1) %>%
+      as.vector() %>% # Output comes as a matrix
+      `[`(-K) %>% # CPP version spits out a dB_K, which we don't want
+      c(rep(0, K)) %>% # Adds dNu (which we don't consider)
+      magrittr::set_names(names(memory_w))
+  } else if (mode == "c2"){
+    v_cpar <- c(p(v), mu(v), s2(v), nu(v))
+    w_cpar <- c(p(w), mu(w), s2(w), nu(w))
+    dQC2(v_cpar, w_cpar, y0[index]) %>%
+      magrittr::multiply_by(-1) %>%
+      as.vector() %>% # Output comes as a matrix
+      `[`(-K) %>% # CPP version spits out a dB_K, which we don't want
+      c(rep(0, K)) %>% # Adds dNu (which we don't consider)
+      magrittr::set_names(names(memory_w))
+  }
+}
+  
+```
 
 ## Testing the partial derivatives
-Here goes code for test --- (can do)
+
+```{r Testing gradients for Q}
+#| code-line-numbers: "19-23"
+#| echo: true
+test_that("Gradients are correct", {
+  set.seed(0)
+  t <- list(
+    be = c(0.2, 0.4) %>% p_() %>% inverse_softmax() %>% `[`(-length(.)),
+    mu = c(-3, 1, 8),
+    kp = c(1, 8, 2),
+    nu = c(2, 3, 6)
+  )
+  t0 <- list(
+    be = t$be %>% magrittr::add(rnorm(length(.), 0, 1)),
+    mu = t$mu %>% magrittr::add(rnorm(length(.), 0, 1)),
+    kp = t$kp %>% magrittr::add(rnorm(length(.), 0, 1)),
+    nu = t$nu
+  ) %>% unlist()
+  t <- unlist(t)
+  Qfunc <- EstepReparam(0, t)
+  y <- rtmix(1e3, Qfunc$get$p(t), Qfunc$get$mu(t),
+             Qfunc$get$s2(t), Qfunc$get$nu(t))
+  Qfunc <- EstepReparam(y, t) # Wraps the previously shown implementations
+  
+  A <- numDeriv::grad(Qfunc$objective, t0)
+  B <- Qfunc$grad(t0) %>% magrittr::set_names(NULL)
+  expect_equal(A,B)
+
+  set.seed(NULL)
+})
+```
 
 ## Splitting the E and M steps
 Generally we are required to compute
@@ -106,159 +220,880 @@ $$
 Q(\theta^{(n+1)} \mid \theta^{(n)}) > Q(\theta^{(n)} \mid \theta^{(n)}) \Rightarrow \ell(\theta^{(n+1)}) > \ell(\theta^{(n)})
 $$
 
+## Accessing the Q-function and its gradient
+
+```r{code-line-numbers="1-5|10-18|20-35"}
+# Updates the background distributional parameters (theta_prime / w)
+memory_w <- init_par
+set_w <- function(v){
+  memory_w <<- v
+}
+get_w <- function(){
+  memory_w
+}
+
+# Objective with respect to (theta / v)
+objective <- function(v, index = 1:length(y), y0 = y, cache = cache_by_default){
+  Q(v, memory_w, index, y0, cache=cache)
+}
+
+# Gradient with respect to (theta / v)
+grad <- function(v, index = 1:length(y), y0 = y, cache = cache_by_default, mode = "r"){
+  dQ(v, memory_w, index, y0, cache=cache, mode = mode)
+}
+
+structure(list(
+    objective = objective,
+    grad = grad,
+    set_w = set_w,
+    get_w = get_w,
+    loglikelihood = loglikelihood,
+    f_y = f_y,
+    f_y_by_z = f_y_by_z,
+    cond_p = cond_p_wrapper,
+    fisher = fisher,
+    get = list(p = p, mu=mu, s2 = s2, nu = nu),
+    n_param = 4 * K - 1,
+    K = K,
+    n_index = length(y)
+  ), class = c("CompStatQfunc", "CompStatOptimizable"))
+
+```
+
 ## Implementing the M-step
-Here goes code for SGD --- (brief) (can do)
+
+```r{code-line-numbers="1-13|15-27"}
+SGD <- function(
+    optimizable,
+    optimizer = Vanilla_Optimizer(),
+    init_par = NULL,
+    stop_crit = 50,
+    em_update_tol = 1,
+    shuffle = T,
+    tracing = T,
+    seed = NULL,
+    debug = F
+){
+  ...
+}
+    
+GD <- function(
+    optimizable,
+    init_par = NULL,
+    stop_crit = 50,
+    d = 0.7,
+    gamma0 = 0.01,
+    c = 1,
+    tracing = T,
+    em_update_tol = 1,
+    debug = F
+){
+  ...
+}
+
+```
+
 
 ## Testing the algorithm
 
 ```{r Testing setup}
 #| echo: False
 #| cache: True
-#| eval: False
 
 set.seed(0)
-theta <- list(
-  p = c(0.2, 0.4),
-  mu = c(-3, 1, 8),
-  sigma2 = c(1, 8, 2),
-  nu = c(2, 3, 6)
-)
-y <- rtmix(1e4, theta$p, theta$mu, theta$sigma2, theta$nu)
-theta <- theta %>% unlist()
+  t <- list(
+    be = c(0.2, 0.4) %>% p_() %>% inverse_softmax() %>% `[`(-length(.)),
+    mu = c(-3, 1, 8),
+    kp = log(c(1, 8, 2)),
+    nu = c(2, 3, 6)
+  )
+  t0 <- list(
+    be = t$be %>% magrittr::add(rnorm(length(.), 0, 1)),
+    mu = t$mu %>% magrittr::add(rnorm(length(.), 0, 4)),
+    kp = t$kp %>% magrittr::add(rnorm(length(.), 0, 0.5)),
+    nu = t$nu
+  ) %>% unlist()
+  t <- unlist(t)
+  Qfunc <- EstepReparam(0, t)
+  y <- rtmix(1e4, Qfunc$get$p(t), Qfunc$get$mu(t),
+             Qfunc$get$s2(t), Qfunc$get$nu(t))
+  Qfunc <- EstepReparam(y, t) # Wraps the previously shown implementations
 
-theta_0 <- list(
-  p = c(0.33, 0.33),
-  mu = rnorm(3, 0, 2),
-  sigma2 = rep(var(y) / 100, 3),
-  nu = c(2,3,6)
-) %>% unlist()
+  Qfunc$set_w(t)
+  p0 <- plot(Qfunc) + ggplot2::ggtitle("True distribution")
+  Qfunc$set_w(t0)
+  p1 <- plot(Qfunc) + ggplot2::ggtitle("Initial Parameter Guess")
+  
+  gridExtra::grid.arrange(grobs = list(p0, p1))
 
-Qfunc <- MinimalEstep(y, theta_0)
-#Qfunc_old <- Estep_Factory_tmix(y, theta_0)
+```
 
-Qfunc$set_w(theta)
-p1 <- plot(Qfunc) + ggplot2::ggtitle("True distribution")
+## Testing the algorithm{.smaller}
 
-Qfunc$set_w(theta_0)
-p2 <- plot(Qfunc) + ggplot2::ggtitle("Initial parameter guess")
+```{r Running optimizers}
+#| echo: true
+#| cache: True
+  Qfunc$set_w(t0)
+  trace_gd <- GD(Qfunc, stop_crit = 350, d = 0.98)
+  gd_p4 <- plot(trace_gd, what = "o") + ggplot2::ggtitle("Loglikelihood (GD)") +
+    ggplot2::geom_hline(yintercept = Qfunc$loglikelihood(t), color = "red")
+  gd_p3 <- plot(trace_gd, what = "p") + ggplot2::ggtitle("Parameter trajectories (GD)")
+  gd_p2 <- plot(Qfunc) + ggplot2::ggtitle("Final distribution (GD)")
 
-gridExtra::grid.arrange(grobs = list(p1, p2))
-
+  Qfunc$set_w(t0)
+  lr <- polynomial_schedule(1, 0.01, 350)
+  trace_sgd <- SGD(Qfunc, Adam_Optimizer(lr, batch_size = 200), stop_crit = 350)
+  sg_p4 <- plot(trace_sgd, what = "o") + ggplot2::ggtitle("Loglikelihood (SGD)") +
+    ggplot2::geom_hline(yintercept = Qfunc$loglikelihood(t), color = "red")
+  sg_p3 <- plot(trace_sgd, what = "p") + ggplot2::ggtitle("Parameter trajectories (SGD)")
+  sg_p2 <- plot(Qfunc) + ggplot2::ggtitle("Final distribution (SGD)")
 ```
 
 ## Test results{.smaller}
 
-```{r Testing}
-#| cache: true
-#| eval: False
-
-Qfunc$set_w(theta_0)
-#Qfunc_old$set_w(theta_0)
-
-lr <- polynomial_schedule(0.1, 0.05, 100)
-opt <- Adam_Optimizer(lr, batch_size = length(y)/10, beta_1 = 0.97, beta_2 = 0.99, amsgrad = T)
-sc <- stopping_criterion(maxiter = 100)
-trace <- SGD(Qfunc, opt, unlist(theta_0), stop_crit = sc, seed = 0)
-
-#opt$reset()
-#trace_old <- SGD(Qfunc_old, opt, unlist(theta_0), stop_crit = sc, seed = 0)
-#identical(trace, trace_old)
-
-plot(trace)
-
-plot(Qfunc)
+```{r Parameter and likelihood traces}
+gridExtra::grid.arrange(grobs = list(
+  gd_p3, sg_p3, gd_p4, sg_p4
+), ncol = 2)
 ```
 
+## Test results{.smaller}
 
-```{r Testing loglikelihood}
-#| eval: False
-y <- 1:nrow(trace) %>% 
-  purrr::map_dbl(.f = function(i){
-    Qfunc$loglikelihood(trace %>% dplyr::select(-obj) %>% `[`(i,) %>% unlist())
-  })
-
-data.frame(
-  Epoch = 1:nrow(trace),
-  Loglikelihood = y
-) %>% 
-  ggplot2::ggplot(ggplot2::aes(x = Epoch, y = Loglikelihood)) +
-  ggplot2::geom_line() +
-  ggplot2::geom_hline(yintercept = Qfunc$loglikelihood(theta), color = "red") +
-  ggplot2::annotate("text", x = 15, y = Qfunc$loglikelihood(theta)*0.97, label = "True parameter loglikelihood", color ="red")
-
+```{r Fitted distributions}
+gridExtra::grid.arrange(
+  grobs = list(gd_p2, sg_p2, p0),
+  nrow = 3
+)
 ```
+
 
 ## Estimating the Fisher information
 We have several ways to compute the Fisher information. We rely on the following
 
 $$
-\hat{i}_X = -D_{\bar{\theta}}(\nabla_\theta Q(\bar{\theta} \mid \bar{\theta})) \mid_{\bar{\theta}=\hat{\theta}} \\
-\hat{i}_X = -D_\theta^2 Q(\hat{\theta} \mid \hat{\theta}) - D_{\theta'}\nabla_\theta Q(\hat{\theta} \mid \hat{\theta})
+\hat{i}_X = -D_{\bar{\theta}}(\nabla_\theta Q(\bar{\theta} \mid \bar{\theta})) \mid_{\bar{\theta}=\hat{\theta}} \quad \quad \quad \quad \quad \quad (1) \\
+\hat{i}_X = -D_\theta^2 Q(\hat{\theta} \mid \hat{\theta}) - D_{\theta'}\nabla_\theta Q(\hat{\theta} \mid \hat{\theta}) \quad \quad \quad (2)
 $$
 
 Both of these are implemented via *numDeriv*.
 
 
-## Checking that the Fisher information is correct
-(can do, not happy about it)
+## Checking that the Fisher information is correct{.smaller}
+
+```{r Checking fisher information}
+#| cache: true
+#| echo: true
+#| code-line-numbers: "15-19"
+test_that("fisher information is calculated correctly", {
+
+  set.seed(0)
+  t <- list(
+    be = c(0.2, 0.4) %>% p_() %>% inverse_softmax() %>% `[`(-length(.)),
+    mu = c(-3, 1, 8),
+    kp = log(c(1, 8, 2)),
+    nu = c(2, 3, 6)
+  ) %>% unlist()
+  Qfunc <- EstepReparam(0, t)
+  y <- rtmix(1e4, Qfunc$get$p(t), Qfunc$get$mu(t),
+             Qfunc$get$s2(t), Qfunc$get$nu(t))
+  Qfunc <- EstepReparam(y, t) # Wraps the previously shown implementations
+
+  A <- Qfunc$fisher(t, method = 1) # Method (1)
+  B <- Qfunc$fisher(t, method = 2) # Method (2)
+  C <- Qfunc$fisher(t, method = 3) # optimHess
+  expect_equal(A, B)
+  expect_equal(max(abs(A - C)) < 1, TRUE) # Not exact for finite data
+
+  set.seed(NULL)
+
+})
+```
 
 ## Profiling the algorithm{.smaller}
 
 ```{r Profiling}
-#| eval: False
+#| cache: true
+
+Qfunc$set_w(t0)
 profvis::profvis(
-  SGD(Qfunc, opt, unlist(theta_0), stop_crit = 100, seed = 0)
+  SGD(Qfunc, Adam_Optimizer(batch_size = 1e3), stop_crit = 50, cache = F),
+  simplify = T
 )
 
 ```
 
-## C++ part
+## Implementing gradient in C++
+
+```cpp{code-line-numbers="6-12|14-16|25|27|29-44|45-46|48-49|51"}
+arma::mat cond_pC(
+    const arma::vec &w, const arma::vec &y
+){
+  uword K = w.n_elem / 4;
+  uword N = y.n_elem;
+  arma::mat fy_by_z (y.n_elem, K);
+
+  for (uword k = 0; k < K; k++){
+    for (uword n = 0; n < N; n++){
+      fy_by_z(n,k) = R::dt((y(n)-w(K+k))/ sqrt(w(2*K+k)), w(3*K+k), 0) / sqrt(w(2*K+k));
+    }
+  }
+
+  arma::vec fy = f_y_by_zC(w, y) * w.subvec(0, K - 1);
+
+  return(fy_by_z % ((1/fy) * w.subvec(0, K - 1).t()));
+
+}
+
+arma::mat dQC2(arma::vec v, arma::vec w, arma::vec y){
+
+  uword K = v.n_elem / 4;
+  uword N = y.n_elem;
+
+  arma::mat condp = cond_pC(w, y); // Hard part is here!!!
+
+  arma::vec dBeta = arma::sum(condp).t() - N * w.subvec(0, K - 1);
+
+  arma::mat mumat (N,K);
+  arma::mat ymat (N,K);
+  for (uword k = 0; k < K; k++){
+    mumat.col(k).fill(w[K+k]);
+    }
+  for (uword n = 0; n < N; n++){
+    ymat.row(n).fill(y[n]);
+    }
+  arma::mat y_minus_mu = ymat - mumat;
+  
+  arma::mat nu_sigma (N,K);
+  arma::mat nu_plus (N,K);
+  for (uword k = 0; k < K; k++){
+    nu_sigma.col(k).fill(w[3*K+k]*w[2*K+k]);
+    nu_plus.col(k).fill(w[3*K+k]+1);
+  }
+  arma::mat mu_coef = nu_plus % y_minus_mu / (nu_sigma + pow(y_minus_mu, 2));
+  arma::vec dMu = arma::sum(mu_coef % condp).t();
+  
+  arma::mat kappa_coef = -0.5 + 0.5 * y_minus_mu % mu_coef;
+  arma::vec dKappa = arma::sum(kappa_coef % condp).t();
+  
+  return(arma::join_cols(arma::join_cols(dBeta, dMu), dKappa));
+}
+```
+
+
+## Checking C++
 
 ```{r Benchmarking cpp implementation of weights}
-#| eval: False
-set.seed(4112023)
-n <- 1000
-K <- 4
-y <- rnorm(n)
-theta <- list(
-  p = rexp(K) %>% exp() %>% magrittr::divide_by(sum(.)) %>% `[`(-1),
-  mu = rnorm(K),
-  sigma2 = rexp(K),
-  nu = rexp(K)
-) %>% unlist()
-Qfunc <- MinimalEstep(y, theta)
+#| code-line-numbers: "14-18"
+#| echo: true
+test_that("rc++ implementation is consistent", {
+  set.seed(0)
+  t <- list(
+    be = c(0.2, 0.4, 0.1, 0.2) %>% p_() %>% inverse_softmax() %>% `[`(-length(.)),
+    mu = c(-3, 1, 8, 2, -7),
+    kp = log(c(1, 8, 2, 2, 4)),
+    nu = c(2, 3, 6, 2, 8)
+  ) %>% unlist()
+  Qfunc <- EstepReparam(0, t)
+  y <- rtmix(1e3, Qfunc$get$p(t), Qfunc$get$mu(t),
+             Qfunc$get$s2(t), Qfunc$get$nu(t))
+  Qfunc <- EstepReparam(y, t) # Wraps the previously shown implementations
 
-microbenchmark::microbenchmark(
-  Qfunc$cond_p(theta, 1:n, y, mode = "r"),
-  Qfunc$cond_p(theta, 1:n, y, mode = "c")
-) %>% 
-  ggplot2::autoplot()
-
-profvis::profvis(
-  for (i in 1:1000){
-    Qfunc$cond_p(theta, 1:n, y, mode = "r")
-  }
-)
-
+  A <- Qfunc$grad(t)
+  B <- Qfunc$grad(t, mode = "c")
+  C <- Qfunc$grad(t, mode = "c2")
+  expect_equal(A, B)
+  expect_equal(A, C)
+})
 ```
 
 
-## Benchmark
-(idk)
+## Benchmarking performance
+```{r Benchmark cpp}
+#| cache: true
+  clear_cache <- function(mode = "r"){
+    environment(Qfunc$grad)$cond_p_cache <<- NULL
+    Qfunc$grad(t, cache = T, mode = mode)
+  }
 
-## Benchmark against something else??
-(nah)
+bm <- microbenchmark::microbenchmark(
+    clear_cache(mode = "r"),
+    clear_cache(mode = "c"),
+    Qfunc$grad(t, mode = "c"),
+    Qfunc$grad(t, mode = "c2"),
+    times = 1000
+  )
+```
+
+## Benchmarking performance
+
+```{r Cpp benchmark results}
+
+ggplot2::autoplot(bm, log=F) + ggplot2::ggtitle("Benchmark for gradient evaluation (NB. x-scale is linear)")
+
+```
+
+## EstepReparam source
+
+```r
+EstepReparam <- function(y, init_par, K = ceiling(length(init_par) / 4), cache_by_default = T){
+
+  # Parameters are parsed as a NumericVector
+  # There are (K - 1) probability parameters
+  # There are K mean parameters
+  # There are K scale parameters
+  # There are K shape parameters
+
+  # Parameters should be accessed via accessor functions
+
+  # Updates the background distributional parameters (theta_prime / w)
+  memory_w <- init_par
+  set_w <- function(v){
+    memory_w <<- v
+  }
+  get_w <- function(){
+    memory_w
+  }
+
+  # Parameters are accessed through functions
+  be <- function(w, k = 1:(K-1)){
+    w[k]
+  }
+  p <- function(w, k = 1:K){
+    softmax(c(w[1:(K-1)], 0))[k]
+  }
+  mu <- function(w, k = 1:K){
+    w[K - 1 + k]
+  }
+  kp <- function(w, k = 1:K){
+    w[2*K - 1 + k]
+  }
+  s2 <- function(w, k = 1:K){
+    exp(kp(w, k))
+  }
+  nu <- function(w, k = 1:K){
+    memory_w[3*K - 1 + k]
+  }
+
+  # Conditional marginal density Y
+  f_y_by_z <- function(w, index = 1:length(y), y0 = y){
+    1:K %>%
+      purrr::map(.f = function(k){
+        dt((y0[index] - mu(w, k))/sqrt(s2(w, k)), df=nu(w,k))/sqrt(s2(w, k))
+      }) %>%
+      purrr::reduce(.f = cbind) %>%
+      magrittr::set_colnames(NULL)
+  }
+
+  # Unconditional marginal density Y
+  f_y <- function(w, index = 1:length(y), y0 = y){
+    (f_y_by_z(w, index, y0) %*% p(w)) %>% as.vector()
+  }
+
+  # Conditional densities for Z
+  cond_pR <- function(w, index = 1:length(y), y0 = y){
+    (outer(1 / f_y(w, index, y0), p(w)) * f_y_by_z(w, index, y0)) %>%
+      magrittr::set_colnames(paste0("p", 1:K))
+  }
+
+  cond_p <- function(w, index = 1:length(y), y0 = y, mode = "r"){
+    if (mode == "c"){
+      cond_pC(c(1-sum(p(w)), w), y0[index])
+    } else if (mode == "r"){
+      cond_pR(w, index, y0)
+    }
+  }
+
+  cond_p_par_cache_w <- NULL
+  cond_p_par_cache_index <- NULL
+  cond_p_par_cache_y0 <- NULL
+  cond_p_cache <- NULL
+  cond_p_wrapper <- function(w, index = 1:length(y), y0 = y, cache = cache_by_default, mode = "r"){
+    if (cache){
+      if (
+        !is.null(cond_p_cache) &
+        isTRUE(all.equal(cond_p_par_cache_w, w)) &
+        isTRUE(all.equal(cond_p_par_cache_index, index)) &
+        isTRUE(all.equal(cond_p_par_cache_y0, y0))
+        ){
+        return(cond_p_cache)
+      } else {
+        cond_p_par_cache_w <<- w
+        cond_p_par_cache_index <<- index
+        cond_p_par_cache_y0 <<- y0
+        cond_p_cache <<- cond_p(w, index, y0, mode)
+        return(cond_p_cache)
+      }
+    } else {
+      cond_p(w, index, y0, mode)
+    }
+  }
+
+  dmu <- function(v, w, index = 1:length(y), y0 = y, sum = T, cache = cache_by_default){
+    mudiff <- outer(y0[index], 1:K, function(y, k){
+      (nu(v,k)+1)*(y - mu(v,k)) / (nu(v,k) * s2(v,k) + (y - mu(v,k))^2)
+    })
+    if (sum){
+      colSums(mudiff * cond_p_wrapper(w, index, y0, cache=cache)) %>% magrittr::set_names(paste0("mu", 1:K))
+    } else {
+      mudiff * cond_p_wrapper(w, index, y0, cache=cache) %>% magrittr::set_names(paste0("mu", 1:K))
+    }
+  }
+
+  dkappa <- function(v, w, index = 1:length(y), y0 = y, sum = T, cache = cache_by_default){
+    kappadiff <- outer(y0[index], 1:K, function(y, k){
+      (1 - (nu(v,k)+1)*(y - mu(v,k))^2 / (nu(v,k) * s2(v,k) + (y - mu(v,k))^2)) / (-2)
+    })
+    if (sum){
+      colSums(kappadiff * cond_p_wrapper(w, index, y0, cache=cache)) %>% magrittr::set_names(paste0("kappa", 1:K))
+    } else {
+      kappadiff * cond_p_wrapper(w, index, y0, cache=cache) %>% magrittr::set_names(paste0("kappa", 1:K))
+    }
+  }
+
+  dsigma2 <- function(v, w, index = 1:length(y), y0 = y, sum = T, cache = cache_by_default){
+    sigmadiff <- outer(y0[index], 1:K, function(y, k){
+      (1 - (nu(v,k)+1)*(y - mu(v,k))^2 / (nu(v,k) * s2(v,k) + (y - mu(v,k))^2)) / (-2 * s2(v,k))
+    })
+    if (sum){
+      colSums(sigmadiff * cond_p_wrapper(w, index, y0, cache=cache)) %>% magrittr::set_names(paste0("sigma2", 1:K))
+    } else {
+      sigmadiff * cond_p_wrapper(w, index, y0, cache=cache) %>% magrittr::set_names(paste0("sigma2", 1:K))
+    }
+  }
+
+  dbeta <- function(v, w, index = 1:length(y), y0 = y, sum = T, cache = cache_by_default){
+    if (sum){
+      (colSums(cond_p_wrapper(w, index, y0, cache=cache)) - length(index) * p(v))[-K]
+    } else{
+      (cond_p_wrapper(w, index, y0, cache=cache) - matrix(rep(p(v), length(index)), nrow = length(index)))[,-K]
+    }
+  }
+
+  # Be aware that the last entry of the resulting vector does not have meaning
+  # since there are one fewer probability parameters
+  dp <- function(v, w, index = 1:length(y), y0 = y, sum = T, cache = cache_by_default){
+    if (sum){
+      pSums <- colSums(cond_p_wrapper(w, index, y0, cache=cache)) / p(v)
+      pSums <- pSums - pSums[K]
+      return(pSums[-K])
+    } else {
+      pfrac <- cond_p_wrapper(w, index, y0, cache=cache) / matrix(rep(p(v), length(index)), nrow = length(index), byrow = T)
+      pfrac <- pfrac - matrix(rep(pfrac[,K],K), ncol = K)
+      return(pfrac[,-K])
+    }
+  }
+
+  dQ <- function(v, w, index = 1:length(y), y0 = y, cache = cache_by_default, mode = "r"){
+    if (mode == "r"){
+      -c(
+        dbeta(v, w, index, y0, cache=cache),
+        dmu(v, w, index, y0, cache=cache),
+        dkappa(v, w, index, y0, cache=cache),
+        rep(0, K)
+      ) %>%
+        magrittr::set_names(names(memory_w))
+    } else if (mode == "c"){
+      v_cpar <- c(p(v), mu(v), s2(v), nu(v))
+      w_cpar <- c(p(w), mu(w), s2(w), nu(w))
+      dQC(v_cpar, w_cpar, y0[index]) %>%
+        magrittr::multiply_by(-1) %>%
+        as.vector() %>% # Output comes as a matrix
+        `[`(-K) %>% # CPP version spits out a dB_K, which we don't want
+        c(rep(0, K)) %>% # Adds dNu (which we don't consider)
+        magrittr::set_names(names(memory_w))
+    } else if (mode == "c2"){
+      v_cpar <- c(p(v), mu(v), s2(v), nu(v))
+      w_cpar <- c(p(w), mu(w), s2(w), nu(w))
+      dQC2(v_cpar, w_cpar, y0[index]) %>%
+        magrittr::multiply_by(-1) %>%
+        as.vector() %>% # Output comes as a matrix
+        `[`(-K) %>% # CPP version spits out a dB_K, which we don't want
+        c(rep(0, K)) %>% # Adds dNu (which we don't consider)
+        magrittr::set_names(names(memory_w))
+    }
+  }
+
+  Q <- function(v, w, index = 1:length(y), y0 = y, cache = cache_by_default){
+    llz <- outer(y0[index], 1:K, function(y, k){
+      -log(s2(v,k)) / 2 - (nu(v,k)+1)/2 * log(1 + (y - mu(v,k))^2 / (nu(v,k) * s2(v,k))) + log(p(v,k))
+    })
+    -sum(llz * cond_p_wrapper(w, index, y0, cache=cache))
+  }
+
+  # Objective with respect to (theta / v)
+  objective <- function(v, index = 1:length(y), y0 = y, cache = cache_by_default){
+    Q(v, memory_w, index, y0, cache=cache)
+  }
+
+  # Gradient with respect to (theta / v)
+  grad <- function(v, index = 1:length(y), y0 = y, cache = cache_by_default, mode = "r"){
+    dQ(v, memory_w, index, y0, cache=cache, mode = mode)
+  }
+
+  ## Likelihood
+  loglikelihood <- function(v, index = 1:length(y), y0 = y){
+    f_y(v, index, y0) %>% log() %>% sum()
+  }
+
+  # Fisher information
+  fisher <- function(v_mle, index = 1:length(y), method = 1){
+
+    # Note that there is a minus built into dQ called by plain_dQ
+    SymmGrad <- function(v){
+      dQ(v, v, index)
+    }
+    Grad2MLE <- function(v){
+      dQ(v, v_mle, index)
+    }
+    AsymGradMLE <- function(v){
+      dQ(v_mle, v, index)
+    }
+
+    if (method == 1){
+      return(numDeriv::jacobian(SymmGrad, v_mle))
+    }
+
+    if (method == 2){
+      return(numDeriv::jacobian(Grad2MLE, v_mle) +
+               numDeriv::jacobian(AsymGradMLE, v_mle))
+    }
+
+    if (method == 4){
+      gradmat <- list(
+        dp(v_mle, v_mle, index, sum = F),
+        dmu(v_mle, v_mle, index, sum = F),
+        dsigma2(v_mle, v_mle, index, sum = F),
+        matrix(rep(0, length(index) * K), ncol = K)
+      ) %>%
+        purrr::reduce(.f = cbind)
+      loglik <- colMeans(gradmat)
+      gradmat <- gradmat - matrix(rep(loglik, nrow(gradmat)), ncol = ncol(gradmat), byrow = T)
+      return(
+        1:nrow(gradmat) %>%
+          purrr::map(.f = function(i){
+            outer(gradmat[i,], gradmat[i,])
+          }) %>%
+          purrr::reduce(.f = `+`)
+      )
+    }
+
+    if (method == 3){
+      return(-optimHess(v_mle, loglikelihood))
+    }
+
+    stop("Invalid method specified.")
+
+  }
+
+  check_par <- function(v){
+    rep(TRUE, 4*K-1)
+  }
+
+  structure(list(
+    objective = objective,
+    grad = grad,
+    set_w = set_w,
+    get_w = get_w,
+    loglikelihood = loglikelihood,
+    f_y = f_y,
+    f_y_by_z = f_y_by_z,
+    cond_p = cond_p_wrapper,
+    fisher = fisher,
+    get = list(p = p, mu=mu, s2 = s2, nu = nu),
+    n_param = 4 * K - 1,
+    K = K,
+    n_index = length(y)
+  ), class = c("CompStatQfunc", "CompStatOptimizable"))
+}
+```
 
 
-## TODO
-- Implement simulation from mixed t
-- Implement Q, dQ
-- Implement EM algorithm
-- Implement an alternative to EM (use SGD)
-- Implement Fisher information calc
-- Consider the issue with contaminated Gaussians
+## SGD source code
 
-## OLD derivatives
+```r
+SGD <- function(
+    optimizable,
+    optimizer = Vanilla_Optimizer(),
+    init_par = NULL,
+    stop_crit = 50,
+    em_update_tol = 1,
+    shuffle = T,
+    tracing = T,
+    seed = NULL,
+    debug = F,
+    ...
+    ){
+
+  if (debug){
+    browser()
+  }
+
+  # Enable compatibility with EM algorithm
+  EM_flag <- ("CompStatQfunc" %in% class(optimizable))
+
+  dqrng::dqRNGkind("Xoroshiro128+")
+  dqrng::dqset.seed(seed)
+
+  # Ensure stopping criterion is valid
+  stop_crit <- stopping_criterion(stop_crit)
+
+  # Determine optimizer
+  if (!(class(optimizer) %in% c("CompStatOptimizer"))){
+    opt <-
+      switch(optimizer,
+           "vanilla"= Vanilla_Optimizer(),
+           "momentum"= Momentum_Optimizer(),
+           "adam" = Adam_Optimizer()
+           )
+  } else {
+    opt <- optimizer
+  }
+  opt$reset()
+
+  # Initialize parameters
+  if (is.null(init_par)){
+    init_par <- rep(0, optimizable$n_param)
+  }
+  init_par <- init_par %>% dplyr::coalesce(0)
+
+  if (EM_flag){
+    init_par <- optimizable$get_w()
+  }
+
+  par_next <- init_par
+  obj_next <- optimizable$objective(init_par)
+
+  trace <- matrix(
+    NA, nrow = (stop_crit$maxiter+1), ncol = optimizable$n_param + 1)
+  trace[1,] <- c(par_next,
+                 ifelse(EM_flag,
+                        optimizable$loglikelihood(par_next),
+                        obj_next)
+  )
+
+  for (epoch in 1:stop_crit$maxiter){
+
+    # Reshuffle observations
+    if (shuffle){
+      index_permutation <- dqrng::dqsample.int(
+        optimizable$n_index, optimizable$n_index, replace = F)
+    } else {
+      index_permutation <- 1:optimizable$n_index
+    }
+
+    # Remember the previous parameters
+    par_before <- par_next
+    obj_before <- obj_next
+
+    # Determine batch size
+    batch_size <- optimizer$batch_size(epoch, obj = obj_before,
+    n = optimizable$n_index)
+    batches_per_epoch <- ceiling(optimizable$n_index / batch_size)
+
+    # Apply minibatch gradient updates
+    for (b in 1:batches_per_epoch){
+      grad <- optimizable$grad(
+        par_before,
+        index_permutation[(1+(b-1)*batch_size):
+                            min(b*batch_size, optimizable$n_index)],
+        ...
+      )
+      par_next <- par_before - opt$lr(epoch) * opt$update_param(grad)
+    }
+
+    # Tracing and keep track of objective function
+    obj_next <- optimizable$objective(par_next)
+    if (tracing == T){
+      trace[epoch+1,] <- c(par_next, ifelse(
+        EM_flag, optimizable$loglikelihood(par_next), obj_next))
+    }
+
+    # If the Q-function improved over the epoch, update the underlying par
+    if (EM_flag){
+      if (obj_next < obj_before * ifelse(
+      obj_before > 0, em_update_tol, 1/em_update_tol)){
+        optimizable$set_w(par_next)
+        rel_dec <- (obj_before - obj_next) / abs(obj_next)
+        optimizer$reset(rel_dec, rel_dec, partial = F)
+      }
+    }
+
+    # Check if stopping criterion is fulfilled
+    if (stop_crit$check(
+      epoch,
+      param = par_next,
+      param_old = par_before,
+      obj = ifelse(EM_flag,
+                   optimizable$loglikelihood(par_next), obj_next),
+      obj_old = ifelse(EM_flag,
+                       optimizable$loglikelihood(par_before), obj_before)
+    )
+    ){
+
+      if (EM_flag){
+        names <- c(names(par_next), "obj")
+      } else {
+        names <- c(paste0("p", 1:optimizable$n_param), "obj")
+      }
+
+        if (tracing){
+          return(trace %>%
+            magrittr::set_colnames(names) %>%
+            as.data.frame() %>%
+            magrittr::set_class(c("CompStatTrace", class(.))))
+        } else {
+          return(c(par_next, obj_next) %>%
+            matrix(nrow = 1) %>%
+            magrittr::set_colnames(names) %>%
+            as.data.frame())
+        }
+    }
+  }
+
+  stop("An error with maxiter occured.
+  SGD should call return from within the iteration loop.")
+}
+```
+
+## GD source code
+
+```r
+GD <- function(
+    optimizable,
+    init_par = NULL,
+    stop_crit = 50,
+    d = 0.98,
+    gamma = 1,
+    tracing = T,
+    em_update_tol = 1,
+    debug = F,
+    ...
+    ){
+
+  if (debug){
+    browser()
+  }
+
+  EM_flag <- FALSE
+  if ("CompStatQfunc" %in% class(optimizable)){
+    EM_flag <- TRUE
+  }
+
+  # Ensure stopping criterion is valid
+  stop_crit <- stopping_criterion(stop_crit)
+
+  # Initialize parameters
+  if (is.null(init_par)){
+    init_par <- rep(0, optimizable$n_param)
+  }
+  init_par <- init_par %>% dplyr::coalesce(0)
+  if (EM_flag){
+    init_par <- optimizable$get_w()
+  }
+
+  par_next <- init_par
+  obj_next <- optimizable$objective(init_par)
+
+  trace <- matrix(
+    NA, nrow = (stop_crit$maxiter+1), ncol = optimizable$n_param + 1)
+  trace[1,] <- c(par_next,
+                 ifelse(EM_flag,
+                        optimizable$loglikelihood(par_next),
+                        obj_next)
+    )
+
+  for (epoch in 1:stop_crit$maxiter){
+
+    # Remember the previous parameters
+    par_before <- par_next
+    obj_before <- obj_next
+
+    grad <- optimizable$grad(par_before, ...) / optimizable$n_index
+    while (gamma > 1e-9){
+      par_next <- par_before - gamma * grad
+      obj_next <- optimizable$objective(par_next)
+      if (obj_next < obj_before){
+        break
+      } else {
+        gamma <- gamma * d
+      }
+    }
+
+    if (tracing == T){
+      trace[epoch+1,] <- c(
+        par_next,ifelse(EM_flag, optimizable$loglikelihood(par_next), obj_next))
+    }
+
+    if (EM_flag){
+      if (obj_next <
+          obj_before * ifelse(obj_before > 0, em_update_tol, 1/em_update_tol)){
+        optimizable$set_w(par_next)
+      }
+    }
+
+    # Check if stopping criterion is fulfilled
+    if (stop_crit$check(
+      epoch,
+      param = par_next,
+      param_old = par_before,
+      obj = ifelse(EM_flag,
+                   optimizable$loglikelihood(par_next), obj_next),
+      obj_old = ifelse(EM_flag,
+                       optimizable$loglikelihood(par_before), obj_before)
+    )
+    ){
+
+      if (EM_flag){
+        names <- c(names(par_next), "obj")
+      } else {
+        names <- c(paste0("p", 1:optimizable$n_param), "obj")
+      }
+
+      if (tracing){
+        return(trace %>%
+                 magrittr::set_colnames(names) %>%
+                 as.data.frame() %>%
+                 magrittr::set_class(c("CompStatTrace", class(.))))
+      } else {
+        return(c(par_next, obj_next) %>%
+                 matrix(nrow = 1) %>%
+                 magrittr::set_colnames(names) %>%
+                 as.data.frame())
+      }
+    }
+
+  }
+
+  stop("An error with maxiter occured. GD should call return from within the iteration loop.")
+}
+```
+
+
+
+## (Extra) Confidence intervals via the fisher information
+
+```{r CI}
+#| cache: true
+
+Qfunc$set_w(trace_sgd %>% tail())
+  lr <- polynomial_schedule(1, 0.01, 350)
+  trace_sgd_extra <- SGD(Qfunc, Adam_Optimizer(lr, batch_size = 500), stop_crit = 350)
+
+mle <- trace_sgd_extra %>% tail()
+fi <- Qfunc$fisher(mle, method = 1)
+
+ci <- mle[3] + c(-1,1) * qt(0.9998, 2) / sqrt(length(y) * fi[3,3])
+
+Qfunc$set_w(mle)
+plot(Qfunc) +
+  ggplot2::geom_vline(xintercept = ci[1]) +
+  ggplot2::geom_vline(xintercept = ci[2]) +
+  ggplot2::lims(x = c(-4, 4)) +
+  ggplot2::ggtitle("Confidence interval for mu_1 (=-3)")
+
+```
+
+## OLD derivatives{style="font-size: 50%"}
 
 $$
 \frac{\partial}{\partial\mu_i}Q(\theta \mid \theta') =

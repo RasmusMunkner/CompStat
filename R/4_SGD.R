@@ -26,7 +26,8 @@ SGD <- function(
     shuffle = T,
     tracing = T,
     seed = NULL,
-    debug = F
+    debug = F,
+    ...
     ){
 
   if (debug){
@@ -96,36 +97,13 @@ SGD <- function(
 
     # Apply minibatch gradient updates
     for (b in 1:batches_per_epoch){
-
       grad <- optimizable$grad(
         par_before,
         index_permutation[(1+(b-1)*batch_size):
-                            min(b*batch_size, optimizable$n_index)]
+                            min(b*batch_size, optimizable$n_index)],
+        ...
       )
-
-      update <- opt$lr(epoch) * opt$update_param(grad)
-
-      if (EM_flag){ # Checks that parameter values are within the allowed limits
-        tmp_par_next <- par_before - update
-        for (attempt in 1:10){
-          check <- optimizable$check_par(tmp_par_next)
-          if (all(check)){
-            par_next <- tmp_par_next
-            break
-          } else {
-            tmp_par_next <- ifelse(
-              check,tmp_par_next, tmp_par_next/4 + 3/4*par_before)
-          }
-          if (attempt == 10){
-            warning("Parameter values ended up on boundary. Requires inspection.")
-            return(trace)
-          }
-        }
-      } else {
-
-        par_next <- par_before - update
-
-      }
+      par_next <- par_before - opt$lr(epoch) * opt$update_param(grad)
     }
 
     # Tracing and keep track of objective function
