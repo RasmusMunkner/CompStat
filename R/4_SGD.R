@@ -22,10 +22,16 @@ SGD <- function(
     optimizer = Vanilla_Optimizer(),
     init_par = NULL,
     stop_crit = 50,
+    em_update_tol = 1,
     shuffle = T,
     tracing = T,
-    seed = NULL
+    seed = NULL,
+    debug = F
     ){
+
+  if (debug){
+    browser()
+  }
 
   # Enable compatibility with EM algorithm
   EM_flag <- ("CompStatQfunc" %in% class(optimizable))
@@ -55,23 +61,8 @@ SGD <- function(
   }
   init_par <- init_par %>% dplyr::coalesce(0)
 
-  # Reasonable defaults for EM algorithm
-  # Note they are random to ensure algorithm is not stuck
   if (EM_flag){
-    valid_flags <- optimizable$check_par_validity(init_par)
-    if (!valid_flags$p){
-      where_p <- optimizable$par_alloc == "p"
-      init_par[where_p] <- 1 / (1+sum(where_p)) # Uniform
-    }
-    if (!valid_flags$sigma2){
-      where_sigma2 <- optimizable$par_alloc == "sigma2"
-      init_par[where_sigma2] <- 1 + rexp(sum(where_sigma2), 1)
-    }
-    if (!valid_flags$nu){
-      where_nu <- optimizable$par_alloc == "nu"
-      init_par[where_nu] <- 1 + rexp(sum(where_nu), 1)
-    }
-    optimizable$set_w(init_par)
+    init_par <- optimizable$get_w()
   }
 
   par_next <- init_par
@@ -79,7 +70,11 @@ SGD <- function(
 
   trace <- matrix(
     NA, nrow = (stop_crit$maxiter+1), ncol = optimizable$n_param + 1)
-  trace[1,] <- c(par_next, optimizable$objective(par_next))
+  trace[1,] <- c(par_next,
+                 ifelse(EM_flag,
+                        optimizable$loglikelihood(par_next),
+                        obj_next)
+  )
 
   for (epoch in 1:stop_crit$maxiter){
 
@@ -112,13 +107,19 @@ SGD <- function(
 
       if (EM_flag){ # Checks that parameter values are within the allowed limits
         tmp_par_next <- par_before - update
-        for (attempt in 1:20){
-          check <- optimizable$check_par_validity(tmp_par_next) %>% unlist()
+        for (attempt in 1:10){
+          check <- optimizable$check_par(tmp_par_next)
           if (all(check)){
             par_next <- tmp_par_next
             break
+          } else {
+            tmp_par_next <- ifelse(
+              check,tmp_par_next, tmp_par_next/4 + 3/4*par_before)
           }
-          tmp_par_next <- (tmp_par_next + par_before) / 2
+          if (attempt == 10){
+            warning("Parameter values ended up on boundary. Requires inspection.")
+            return(trace)
+          }
         }
       } else {
 
@@ -130,13 +131,16 @@ SGD <- function(
     # Tracing and keep track of objective function
     obj_next <- optimizable$objective(par_next)
     if (tracing == T){
-      trace[epoch+1,] <- c(par_next, obj_next)
+      trace[epoch+1,] <- c(par_next, ifelse(
+        EM_flag, optimizable$loglikelihood(par_next), obj_next))
     }
 
     # If the Q-function improved over the epoch, update the underlying par
     if (EM_flag){
-      if (obj_next < obj_before){
+      if (obj_next < obj_before * ifelse(obj_before > 0, em_update_tol, 1/em_update_tol)){
         optimizable$set_w(par_next)
+        rel_dec <- (obj_before - obj_next) / abs(obj_next)
+        optimizer$reset(rel_dec, rel_dec, partial = F)
       }
     }
 
@@ -145,8 +149,10 @@ SGD <- function(
       epoch,
       param = par_next,
       param_old = par_before,
-      obj = obj_next,
-      obj_old = obj_before
+      obj = ifelse(EM_flag,
+                   optimizable$loglikelihood(par_next), obj_next),
+      obj_old = ifelse(EM_flag,
+                       optimizable$loglikelihood(par_before), obj_before)
     )
     ){
 

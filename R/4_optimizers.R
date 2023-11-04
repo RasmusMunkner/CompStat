@@ -45,6 +45,9 @@ Adam_Optimizer <- function(
     lr = 1e-3, batch_size = 32, beta_1 = 0.95, beta_2 = 0.97, eps = 1e-8, amsgrad = T
     ){
 
+  nu <- 0
+  rho <- 0
+
   update_param <- function(grad){
     rho <<- beta_1 * rho + (1-beta_1) * grad
     nu_proposal <- beta_2 * nu + (1-beta_2) * grad^2
@@ -56,9 +59,15 @@ Adam_Optimizer <- function(
     rho / (sqrt(nu) + eps)
   }
 
-  reset <- function(){
-    rho <<- 0
-    nu <<- 0
+  reset <- function(alpha_rho = 0.9, alpha_nu = 0.9, partial = F){
+    if (partial){
+      rho <<- rho * alpha_rho
+      nu <<- nu * alpha_nu
+    } else {
+      rho <<- 0
+      nu <<- 0
+    }
+
   }
 
   CompStatOptimizer(

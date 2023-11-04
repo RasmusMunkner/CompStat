@@ -31,6 +31,8 @@ $$
 \log \left(\frac{\Gamma((\nu_Z + 1)/2)}{\sqrt{\pi\nu_Z}\Gamma(\nu_Z/2)}\right) - \frac{1}{2}\log(\sigma_Z^2) - \frac{1}{2}(\nu_Z + 1)\log\left(1 + \frac{(Y-\mu_Z)^2}{\nu_Z\sigma_Z^2}\right) + \log p_Z
 $$
 
+## Mixtures of T-distributions {style="font-size: 50%"}
+
 Letting $\theta = (\mu_1, \ldots , \nu_K, p_1, \ldots, p_K)$, the Q-function is
 $$
 Q(\theta \mid \theta') = E_{\theta'}[\log f(Y,Z \mid \theta) \mid  Y = y] = \\
@@ -40,6 +42,11 @@ p_i'(y) = P(Z = i \mid Y = y, \theta') = f(Y=y \mid Z = i, \theta')\frac{P(Z=i \
 $$
 
 We will assume that $\nu$ is known and will thus have to maximize this for $(p,\mu,\sigma)$.
+We found it fruitful to introduce
+$$
+p_i(\beta) = \frac{e^{\beta_i}}{1 + \sum_{k=1}^{K-1}e^{\beta_k}} \quad , \quad \kappa_i = \log(\sigma_i^2)
+$$
+And optimize over these parameters instead.
 
 ## Gradient {style="font-size: 50%"}
 
@@ -47,18 +54,27 @@ Differentiating we find
 
 $$
 \frac{\partial}{\partial\mu_i}Q(\theta \mid \theta') =
-\frac{(\nu_i + 1)(y-\mu_i)}{\nu_i\sigma_i^2 + (y-\mu_i)^2}p_i'(y) \\
-\frac{\partial}{\partial\sigma_i^2}Q(\theta \mid \theta') =
-\left(-\frac{1}{2\sigma_i^2} - \frac{1}{2}(\nu_i + 1)\frac{1}{1 + \frac{(y-\mu_i)^2}{\nu_i\sigma_i^2}} \frac{-(y-\mu_i)^2}{\nu_i(\sigma_i^2)^2}\right)p_i'(y) = \\
--\frac{1}{2\sigma_i^2}\left(1 - \frac{(\nu_i + 1)(y-\mu_i)^2}{\nu_i\sigma_i^2 + (y-\mu_i)^2}\right)p_i'(y)
+\frac{(\nu_i + 1)(y-\mu_i)}{\nu_i\sigma_i^2 + (y-\mu_i)^2}p_i'(y)
 $$
 
-Also
+And
 
 $$
-\frac{\partial}{\partial p_i} Q(\theta \mid \theta') =
-\frac{\partial}{\partial p_i}\left(\left(\sum_{j=1}^{K-1} \log p_jp_j'(y)\right) + p_K'(y)\log\left(1 - \sum_{j=1}^{K-1}p_j\right)\right) =
-\frac{p_i'(y)}{p_i} - \frac{p_K'(y)}{p_k}
+\frac{\partial}{\partial\kappa_i}Q(\theta \mid \theta') =
+\left(-\frac{1}{2} - \frac{1}{2}(\nu_i + 1)\frac{1}{1 + \frac{(y-\mu_i)^2}{\nu_ie^{\kappa_i}}} \frac{-(y-\mu_i)^2}{\nu_ie^{\kappa_i}}\right)p_i'(y) = \\
+-\frac{1}{2}\left(1 - \frac{(y-\mu_i)^2}{\nu_ie^{\kappa_i} + (y-\mu_i)^2}\right)p_i'(y)
+$$
+
+And
+
+$$
+\frac{\partial}{\partial \beta_i} Q(\theta \mid \theta') =
+\frac{\partial}{\partial \beta_i}\sum_{j=1}^K \log(p_j)p_j'(y) =
+\sum_{j = 1}^K\frac{1 + \sum_{k=1}^{K-1} e^{\beta_k}}{e^{\beta_j}} \cdot \frac{1_{(i=j)}e^{\beta_i}(1 + \sum_{k=1}^{K-1} e^{\beta_k}) - e^{\beta_j+\beta_i}}{(1 + \sum_{k=1}^{K-1} e^{\beta_k})^2}p_j'(y) = \\
+\sum_{j = 1}^K\frac{1_{(i=j)}e^{\beta_i-\beta_j}(1 + \sum_{k=1}^{K-1} e^{\beta_k}) - e^{\beta_i}}{1 + \sum_{k=1}^{K-1} e^{\beta_k}}p_j'(y) =
+\sum_{j=1}^K (1_{(i=j)}e^{\beta_i - \beta_j} - p_i)p_j'(y) =
+p_i'(y) - p_i\sum_{j=1}^K p_j'(y) = \\
+p_i'(y) - p_i
 $$
 
 ## Summarising {style="font-size: 50%"}
@@ -66,23 +82,11 @@ Summing over observations
 
 $$
 \frac{\partial}{\partial \mu_i}Q_N(\theta \mid \theta') =
-\sum_{n = 1}^N \frac{(\nu_i + 1)(y_n-\mu_i)}{\nu_i\sigma_i^2 + (y_n-\mu_i)^2}p_i'(y_n) \\
-\frac{\partial}{\partial \sigma_i^2}Q_N(\theta \mid \theta') =
--\frac{1}{2\sigma_i^2}\sum_{n=1}^N\left(1 - \frac{(\nu_i + 1)(y_n-\mu_i)^2}{\nu_i\sigma_i^2 + (y_n-\mu_i)^2}\right)p_i'(y_n) \\
-\frac{\partial}{\partial p_i}Q_N(\theta \mid \theta') = \sum_{n = 1}^N \left(\frac{p_i'(y_n)}{p_i} - \frac{p_K'(y_n)}{p_k}\right) = \frac{1}{p_i}\sum_{n=1}^N p_i'(y_n) - \frac{1}{p_K}\sum_{n=1}^N p_K'(y_n)
+\sum_{n = 1}^N \frac{(\nu_i + 1)(y_n-\mu_i)}{\nu_ie^{\kappa_i} + (y_n-\mu_i)^2}p_i'(y_n) \\
+\frac{\partial}{\partial \kappa_i}Q_N(\theta \mid \theta') =
+-\frac{1}{2}\sum_{n=1}^N\left(1 - \frac{(\nu_i + 1)(y_n-\mu_i)^2}{\nu_ie^{\kappa_i} + (y_n-\mu_i)^2}\right)p_i'(y_n) \\
+\frac{\partial}{\partial \beta_i}Q_N(\theta \mid \theta') = \sum_{n = 1}^N \left(p_i'(y_n) - p_i\right) = \sum_{n=1}^N p_i'(y_n) - Np_i
 $$
-
-## Likelihood
-It may be useful to also derive the gradient of the loglikelihood
-
-$$
-\ell(\theta) = \sum_{n=1}^N \ell_n(\theta) \\
-\ell_n(\theta) = \log\left(\sum_{k=1}^K p_k f(y_n \mid \mu_k, \sigma_k^2, \nu_k)\right) \\
-\frac{\partial}{\partial \mu_i}\ell_n(\theta) =
-\frac{1}{\exp \ell_n(\theta)} p_i \frac{\Gamma((\nu_i+1)/2)}{\sqrt{\pi \nu_i}\Gamma(\nu_i/2)}\frac{1}{\sqrt{\sigma_i^2}}\left(-(\nu_i+1)/2\right)\left(1 + \frac{(y_n-\mu_i)^2}{\nu_i\sigma_i^2}\right)^{-(\nu_i-1)/2} \left(\frac{x_n-\mu_i}{\nu_i\sigma_i^2}\right)
-$$
-
-Okay, this is not gonna work.
 
 ## Implementing the Q-function
 Here goes code with the implementation --- (can do)
@@ -90,11 +94,99 @@ Here goes code with the implementation --- (can do)
 ## Testing the partial derivatives
 Here goes code for test --- (can do)
 
+## Splitting the E and M steps
+Generally we are required to compute
+$$
+\theta^{(n+1)} = \arg \max Q(\theta \mid \theta^{(n)})
+$$
+
+But maximizing the Q-function is hard in our case, so improving it will be good enough in our case, since
+
+$$
+Q(\theta^{(n+1)} \mid \theta^{(n)}) > Q(\theta^{(n)} \mid \theta^{(n)}) \Rightarrow \ell(\theta^{(n+1)}) > \ell(\theta^{(n)})
+$$
+
 ## Implementing the M-step
 Here goes code for SGD --- (brief) (can do)
 
 ## Testing the algorithm
-Here goes code for unit test --- (can do, requires work)
+
+```{r Testing setup}
+#| echo: False
+#| cache: True
+#| eval: False
+
+set.seed(0)
+theta <- list(
+  p = c(0.2, 0.4),
+  mu = c(-3, 1, 8),
+  sigma2 = c(1, 8, 2),
+  nu = c(2, 3, 6)
+)
+y <- rtmix(1e4, theta$p, theta$mu, theta$sigma2, theta$nu)
+theta <- theta %>% unlist()
+
+theta_0 <- list(
+  p = c(0.33, 0.33),
+  mu = rnorm(3, 0, 2),
+  sigma2 = rep(var(y) / 100, 3),
+  nu = c(2,3,6)
+) %>% unlist()
+
+Qfunc <- MinimalEstep(y, theta_0)
+#Qfunc_old <- Estep_Factory_tmix(y, theta_0)
+
+Qfunc$set_w(theta)
+p1 <- plot(Qfunc) + ggplot2::ggtitle("True distribution")
+
+Qfunc$set_w(theta_0)
+p2 <- plot(Qfunc) + ggplot2::ggtitle("Initial parameter guess")
+
+gridExtra::grid.arrange(grobs = list(p1, p2))
+
+```
+
+## Test results{.smaller}
+
+```{r Testing}
+#| cache: true
+#| eval: False
+
+Qfunc$set_w(theta_0)
+#Qfunc_old$set_w(theta_0)
+
+lr <- polynomial_schedule(0.1, 0.05, 100)
+opt <- Adam_Optimizer(lr, batch_size = length(y)/10, beta_1 = 0.97, beta_2 = 0.99, amsgrad = T)
+sc <- stopping_criterion(maxiter = 100)
+trace <- SGD(Qfunc, opt, unlist(theta_0), stop_crit = sc, seed = 0)
+
+#opt$reset()
+#trace_old <- SGD(Qfunc_old, opt, unlist(theta_0), stop_crit = sc, seed = 0)
+#identical(trace, trace_old)
+
+plot(trace)
+
+plot(Qfunc)
+```
+
+
+```{r Testing loglikelihood}
+#| eval: False
+y <- 1:nrow(trace) %>% 
+  purrr::map_dbl(.f = function(i){
+    Qfunc$loglikelihood(trace %>% dplyr::select(-obj) %>% `[`(i,) %>% unlist())
+  })
+
+data.frame(
+  Epoch = 1:nrow(trace),
+  Loglikelihood = y
+) %>% 
+  ggplot2::ggplot(ggplot2::aes(x = Epoch, y = Loglikelihood)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_hline(yintercept = Qfunc$loglikelihood(theta), color = "red") +
+  ggplot2::annotate("text", x = 15, y = Qfunc$loglikelihood(theta)*0.97, label = "True parameter loglikelihood", color ="red")
+
+```
 
 ## Estimating the Fisher information
 We have several ways to compute the Fisher information. We rely on the following
@@ -110,11 +202,46 @@ Both of these are implemented via *numDeriv*.
 ## Checking that the Fisher information is correct
 (can do, not happy about it)
 
-## Profiling the algorithm
-(can do, rquires work)
+## Profiling the algorithm{.smaller}
+
+```{r Profiling}
+#| eval: False
+profvis::profvis(
+  SGD(Qfunc, opt, unlist(theta_0), stop_crit = 100, seed = 0)
+)
+
+```
 
 ## C++ part
-(idk)
+
+```{r Benchmarking cpp implementation of weights}
+#| eval: False
+set.seed(4112023)
+n <- 1000
+K <- 4
+y <- rnorm(n)
+theta <- list(
+  p = rexp(K) %>% exp() %>% magrittr::divide_by(sum(.)) %>% `[`(-1),
+  mu = rnorm(K),
+  sigma2 = rexp(K),
+  nu = rexp(K)
+) %>% unlist()
+Qfunc <- MinimalEstep(y, theta)
+
+microbenchmark::microbenchmark(
+  Qfunc$cond_p(theta, 1:n, y, mode = "r"),
+  Qfunc$cond_p(theta, 1:n, y, mode = "c")
+) %>% 
+  ggplot2::autoplot()
+
+profvis::profvis(
+  for (i in 1:1000){
+    Qfunc$cond_p(theta, 1:n, y, mode = "r")
+  }
+)
+
+```
+
 
 ## Benchmark
 (idk)
@@ -131,6 +258,28 @@ Both of these are implemented via *numDeriv*.
 - Implement Fisher information calc
 - Consider the issue with contaminated Gaussians
 
+## OLD derivatives
 
+$$
+\frac{\partial}{\partial\mu_i}Q(\theta \mid \theta') =
+\frac{(\nu_i + 1)(y-\mu_i)}{\nu_i\sigma_i^2 + (y-\mu_i)^2}p_i'(y) \\
+\frac{\partial}{\partial\sigma_i^2}Q(\theta \mid \theta') =
+\left(-\frac{1}{2\sigma_i^2} - \frac{1}{2}(\nu_i + 1)\frac{1}{1 + \frac{(y-\mu_i)^2}{\nu_i\sigma_i^2}} \frac{-(y-\mu_i)^2}{\nu_i(\sigma_i^2)^2}\right)p_i'(y) = \\
+-\frac{1}{2\sigma_i^2}\left(1 - \frac{(\nu_i + 1)(y-\mu_i)^2}{\nu_i\sigma_i^2 + (y-\mu_i)^2}\right)p_i'(y)
+$$
+
+$$
+\frac{\partial}{\partial p_i} Q(\theta \mid \theta') =
+\frac{\partial}{\partial p_i}\left(\left(\sum_{j=1}^{K-1} \log p_jp_j'(y)\right) + p_K'(y)\log\left(1 - \sum_{j=1}^{K-1}p_j\right)\right) =
+\frac{p_i'(y)}{p_i} - \frac{p_K'(y)}{p_k}
+$$
+
+$$
+\frac{\partial}{\partial \mu_i}Q_N(\theta \mid \theta') =
+\sum_{n = 1}^N \frac{(\nu_i + 1)(y_n-\mu_i)}{\nu_i\sigma_i^2 + (y_n-\mu_i)^2}p_i'(y_n) \\
+\frac{\partial}{\partial \sigma_i^2}Q_N(\theta \mid \theta') =
+-\frac{1}{2\sigma_i^2}\sum_{n=1}^N\left(1 - \frac{(\nu_i + 1)(y_n-\mu_i)^2}{\nu_i\sigma_i^2 + (y_n-\mu_i)^2}\right)p_i'(y_n) \\
+\frac{\partial}{\partial p_i}Q_N(\theta \mid \theta') = \sum_{n = 1}^N \left(\frac{p_i'(y_n)}{p_i} - \frac{p_K'(y_n)}{p_k}\right) = \frac{1}{p_i}\sum_{n=1}^N p_i'(y_n) - \frac{1}{p_K}\sum_{n=1}^N p_K'(y_n)
+$$
 
 

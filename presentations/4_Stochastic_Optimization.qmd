@@ -704,12 +704,12 @@ $$
 \varphi_i(x) = x^i
 $$
 
-For $i,j > 1$ we get
+For $i,j \geq 1$ we get
 $$
 \Omega_{ij} = \int_0^1 \varphi_i''(x)\varphi_j''(x)dx = ij(i-1)(j-1)\int_0^1 x^{i+j-4}dx = \frac{ij(i-1)(j-1)}{i+j-3}
 $$
 
-And for $i,j \leq 2$ we get $\Omega_{ij} = 0$.
+And for $i,j \leq 1$ we get $\Omega_{ij} = 0$.
 
 ## Stopping criteria{.scrollable}
 

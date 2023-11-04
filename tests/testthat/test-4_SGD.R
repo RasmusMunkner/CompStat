@@ -98,23 +98,24 @@ test_that("C++ sgd converges to the right value", {
 test_that("EM algorithm works", {
 
 
-  theta <- list(
+  bg_theta <- list(
     p = c(0.25),
     mu = c(-10,10),
     sigma2 = c(1,9),
     nu = c(2,10)
   )
+  theta <- bg_theta %>% unlist()
   theta_prime <- list(
     p = c(0.5),
     mu = c(-6,12),
     sigma2 = c(4,4),
     nu = c(2,10)
-  )
+  ) %>% unlist()
 
-  y <- rtmix(10000, theta$p, theta$mu, theta$sigma2, theta$nu)
-  #y <- rtmix(50, theta$p, theta$mu, theta$sigma2, theta$nu)
+  y <- rtmix(10000, bg_theta$p, bg_theta$mu, bg_theta$sigma2, bg_theta$nu)
+  #y <- rtmix(50, bg_theta$p, bg_theta$mu, bg_theta$sigma2, bg_theta$nu)
 
-  Estep <- Estep_Factory_tmix(y, init_par = theta_prime, n_components = 2)
+  Estep <- MinimalEstep(y, init_par = theta_prime)
 
   plot(Estep)
 

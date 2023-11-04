@@ -11,6 +11,56 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
+// f_y_by_zC
+arma::mat f_y_by_zC(const arma::vec& w, const arma::vec& y);
+RcppExport SEXP _CompStat_f_y_by_zC(SEXP wSEXP, SEXP ySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type w(wSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    rcpp_result_gen = Rcpp::wrap(f_y_by_zC(w, y));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cond_pC
+arma::mat cond_pC(const arma::vec& w, const arma::vec& y);
+RcppExport SEXP _CompStat_cond_pC(SEXP wSEXP, SEXP ySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::vec& >::type w(wSEXP);
+    Rcpp::traits::input_parameter< const arma::vec& >::type y(ySEXP);
+    rcpp_result_gen = Rcpp::wrap(cond_pC(w, y));
+    return rcpp_result_gen;
+END_RCPP
+}
+// dQC
+arma::vec dQC(arma::vec v, arma::vec w, arma::vec y);
+RcppExport SEXP _CompStat_dQC(SEXP vSEXP, SEXP wSEXP, SEXP ySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< arma::vec >::type v(vSEXP);
+    Rcpp::traits::input_parameter< arma::vec >::type w(wSEXP);
+    Rcpp::traits::input_parameter< arma::vec >::type y(ySEXP);
+    rcpp_result_gen = Rcpp::wrap(dQC(v, w, y));
+    return rcpp_result_gen;
+END_RCPP
+}
+// dQC2
+arma::mat dQC2(arma::vec v, arma::vec w, arma::vec y);
+RcppExport SEXP _CompStat_dQC2(SEXP vSEXP, SEXP wSEXP, SEXP ySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< arma::vec >::type v(vSEXP);
+    Rcpp::traits::input_parameter< arma::vec >::type w(wSEXP);
+    Rcpp::traits::input_parameter< arma::vec >::type y(ySEXP);
+    rcpp_result_gen = Rcpp::wrap(dQC2(v, w, y));
+    return rcpp_result_gen;
+END_RCPP
+}
 // lll_gradC
 arma::vec lll_gradC(const arma::mat& design, const arma::vec& coef, const arma::vec& y, const arma::mat& pen_matrix, const double& lambda);
 RcppExport SEXP _CompStat_lll_gradC(SEXP designSEXP, SEXP coefSEXP, SEXP ySEXP, SEXP pen_matrixSEXP, SEXP lambdaSEXP) {
@@ -117,6 +167,10 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
+    {"_CompStat_f_y_by_zC", (DL_FUNC) &_CompStat_f_y_by_zC, 2},
+    {"_CompStat_cond_pC", (DL_FUNC) &_CompStat_cond_pC, 2},
+    {"_CompStat_dQC", (DL_FUNC) &_CompStat_dQC, 3},
+    {"_CompStat_dQC2", (DL_FUNC) &_CompStat_dQC2, 3},
     {"_CompStat_lll_gradC", (DL_FUNC) &_CompStat_lll_gradC, 5},
     {"_CompStat_lllC", (DL_FUNC) &_CompStat_lllC, 5},
     {"_CompStat_SGD_CPP_PRIMITIVE", (DL_FUNC) &_CompStat_SGD_CPP_PRIMITIVE, 14},

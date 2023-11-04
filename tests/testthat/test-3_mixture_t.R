@@ -4,31 +4,34 @@
 test_that("Derivation of Q-function is correct", {
 
   set.seed(0)
-  y <- rt(30, df = 3)
-  N <- 4
+  y <- rt(1, df = 3)
+  K <- 2
 
   theta <- list(
-    p = rnorm(N) %>% exp(.) %>% magrittr::divide_by(.,sum(.)) %>% `[`(-1),
-    mu = rnorm(N),
-    sigma2 = rexp(N, 1),
-    nu = 2 + rexp(N, 1)
-    )
+    p = rnorm(K) %>% exp(.) %>% magrittr::divide_by(.,sum(.)) %>% `[`(-1),
+    mu = rnorm(K),
+    sigma2 = rexp(K, 1),
+    nu = 2 + rexp(K, 1)
+    ) %>% unlist()
 
   theta_prime <- list(
-    p = rnorm(N) %>% exp(.) %>% magrittr::divide_by(.,sum(.)) %>% `[`(-1),
-    mu = rnorm(N),
-    sigma2 = rexp(N, 1),
-    nu = 2 + rexp(N, 1)
-  )
+    p = rnorm(K) %>% exp(.) %>% magrittr::divide_by(.,sum(.)) %>% `[`(-1),
+    mu = rnorm(K),
+    sigma2 = rexp(K, 1),
+    nu = 2 + rexp(K, 1)
+  ) %>% unlist()
 
-  Estep <- Estep_Factory_tmix(y, init_par = theta_prime)
+  Estep <- MinimalEstep(y, init_par = theta_prime)
 
-  Estep$objective(theta)
-  Estep$grad(theta)
+  #Estep_Old <- Estep_Factory_tmix(y, init_par = theta_prime, K = K)
+  #Estep$get_w() - unlist(Estep_Old$get_w())[-K]
+  #Estep$objective(theta) - Estep_Old$objective(theta)
 
-  A <- numDeriv::grad(Estep$objective, unlist(theta))
+  #Estep$grad(theta) - Estep_Old$grad(theta)
 
-  B <- Estep$grad(theta)
+  A <- numDeriv::grad(Estep$objective, theta)[1:(3*K-1)]
+
+  B <- Estep$grad(theta)[1:(3*K-1)]
 
   expect_equal((A-B) %>% magrittr::set_names(NULL), rep(0, length(A)))
 
@@ -46,18 +49,19 @@ test_that("fisher information is calculated correctly", {
     sigma2 = rexp(N, 1),
     nu = 2 + rexp(N, 1)
   )
-
   theta_prime <- list(
     p = rnorm(N) %>% exp(.) %>% magrittr::divide_by(.,sum(.)) %>% `[`(-1),
     mu = rnorm(N),
     sigma2 = rexp(N, 1),
     nu = 2 + rexp(N, 1)
   )
-
   n <- 1e3
   y <- rtmix(n, theta$p, theta$mu, theta$sigma2, theta$nu)
 
-  Estep <- Estep_Factory_tmix(y, init_par = theta_prime, n_components = N)
+  theta <- theta %>% unlist()
+  theta_prime <- theta_prime %>% unlist()
+
+  Estep <- Estep_Factory_tmix(y, init_par = theta_prime)
 
   Estep$set_w(theta)
 
