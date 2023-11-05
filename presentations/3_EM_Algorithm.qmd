@@ -24,12 +24,14 @@ $$
 f(y,z \mid \theta) = f(y \mid Z = z, \theta)p(Z = z \mid \theta) = f_{\mu_z, \sigma_z, \nu_z}(y)\cdot p_z
 $$
 
+
 Thus
 
 $$
 \log(f(Y,Z \mid \theta)) = \log f_{\mu_Z, \sigma_Z, \nu_Z}(Y) + \log p_Z = \\
 \log \left(\frac{\Gamma((\nu_Z + 1)/2)}{\sqrt{\pi\nu_Z}\Gamma(\nu_Z/2)}\right) - \frac{1}{2}\log(\sigma_Z^2) - \frac{1}{2}(\nu_Z + 1)\log\left(1 + \frac{(Y-\mu_Z)^2}{\nu_Z\sigma_Z^2}\right) + \log p_Z
 $$
+
 
 ## Mixtures of T-distributions {style="font-size: 50%"}
 
@@ -41,11 +43,13 @@ E_{\theta'}\left[\log \left(\frac{\Gamma((\nu_Z + 1)/2)}{\sqrt{\pi\nu_Z}\Gamma(\
 p_i'(y) = P(Z = i \mid Y = y, \theta') = f(Y=y \mid Z = i, \theta')\frac{P(Z=i \mid \theta')}{\sum_{j = 1}^K f(y \mid Z = j, \theta')P(Z = j \mid \theta')}
 $$
 
+
 We will assume that $\nu$ is known and will thus have to maximize this for $(p,\mu,\sigma)$.
 We found it fruitful to introduce
 $$
 p_i(\beta) = \frac{e^{\beta_i}}{1 + \sum_{k=1}^{K-1}e^{\beta_k}} \quad , \quad \kappa_i = \log(\sigma_i^2)
 $$
+
 And optimize over these parameters instead.
 
 ## Gradient {style="font-size: 50%"}
@@ -57,6 +61,7 @@ $$
 \frac{(\nu_i + 1)(y-\mu_i)}{\nu_i\sigma_i^2 + (y-\mu_i)^2}p_i'(y)
 $$
 
+
 And
 
 $$
@@ -64,6 +69,7 @@ $$
 \left(-\frac{1}{2} - \frac{1}{2}(\nu_i + 1)\frac{1}{1 + \frac{(y-\mu_i)^2}{\nu_ie^{\kappa_i}}} \frac{-(y-\mu_i)^2}{\nu_ie^{\kappa_i}}\right)p_i'(y) = \\
 -\frac{1}{2}\left(1 - \frac{(y-\mu_i)^2}{\nu_ie^{\kappa_i} + (y-\mu_i)^2}\right)p_i'(y)
 $$
+
 
 And
 
@@ -77,6 +83,7 @@ p_i'(y) - p_i\sum_{j=1}^K p_j'(y) = \\
 p_i'(y) - p_i
 $$
 
+
 ## Summarising {style="font-size: 50%"}
 Summing over observations
 
@@ -87,6 +94,7 @@ $$
 -\frac{1}{2}\sum_{n=1}^N\left(1 - \frac{(\nu_i + 1)(y_n-\mu_i)^2}{\nu_ie^{\kappa_i} + (y_n-\mu_i)^2}\right)p_i'(y_n) \\
 \frac{\partial}{\partial \beta_i}Q_N(\theta \mid \theta') = \sum_{n = 1}^N \left(p_i'(y_n) - p_i\right) = \sum_{n=1}^N p_i'(y_n) - Np_i
 $$
+
 
 ## Implementing the Q-function{.smaller}
 
@@ -214,11 +222,13 @@ $$
 \theta^{(n+1)} = \arg \max Q(\theta \mid \theta^{(n)})
 $$
 
+
 But maximizing the Q-function is hard in our case, so improving it will be good enough in our case, since
 
 $$
 Q(\theta^{(n+1)} \mid \theta^{(n)}) > Q(\theta^{(n)} \mid \theta^{(n)}) \Rightarrow \ell(\theta^{(n+1)}) > \ell(\theta^{(n)})
 $$
+
 
 ## Accessing the Q-function and its gradient
 
@@ -374,6 +384,7 @@ $$
 \hat{i}_X = -D_{\bar{\theta}}(\nabla_\theta Q(\bar{\theta} \mid \bar{\theta})) \mid_{\bar{\theta}=\hat{\theta}} \quad \quad \quad \quad \quad \quad (1) \\
 \hat{i}_X = -D_\theta^2 Q(\hat{\theta} \mid \hat{\theta}) - D_{\theta'}\nabla_\theta Q(\hat{\theta} \mid \hat{\theta}) \quad \quad \quad (2)
 $$
+
 
 Both of these are implemented via *numDeriv*.
 
@@ -1082,7 +1093,7 @@ Qfunc$set_w(trace_sgd %>% tail())
 mle <- trace_sgd_extra %>% tail()
 fi <- Qfunc$fisher(mle, method = 1)
 
-ci <- mle[3] + c(-1,1) * qt(0.9998, 2) / sqrt(length(y) * fi[3,3])
+ci <- mle[3] + c(-1,1) * qnorm(0.975) / sqrt(fi[3,3])
 
 Qfunc$set_w(mle)
 plot(Qfunc) +
