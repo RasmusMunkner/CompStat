@@ -235,7 +235,7 @@ $$
 p_k(y) = \sum_{h=0}^{n_k} a_{k,h} y^h \quad , \quad a_{k,h} = \frac{1}{h!}\sum_{i \in I_k}(x_i - \bar{x}_k)^h
 $$
 
-## Taylor expansion implementation{.smaller}
+## Taylor expansion implementation{style="font-size: 60%"}
 
 :::: {.columns}
 
@@ -256,7 +256,8 @@ vandermonde <- function(y, n, mode = "r"){
   switch(mode,
          "c" = vmC(y,n),
          "c2" = vmC2(y,n),
-         "r" = outer(y, 0:n, `^`) %>% t()
+         "r" = outer(y, 0:n, `^`) %>% t(),
+         "poly" = cbind(rep(1,length(y)), poly(y, degree = n, raw = T, simple = T)) %>% t()
          )
 }
 ```
@@ -295,8 +296,6 @@ $$
 $$
 \texttt{coef %*% Vmy} \quad , \quad p_k(y) = \sum_{h=0}^{n_k} a_{k,h} y^h
 $$
-
-Collecting terms
 
 $$
 \log(f_0(y)) \approx y \sum_{i=1}^{100} x_iz_i - \sum_{k=1}^K e^{y\bar{x}_k}p_k(y)
@@ -395,11 +394,11 @@ ggplot2::ggplot(data) +
   ggplot2::labs(x = "x", y = "Density")
 ```
 
-## Profiling the final implementation
+## Profiling the approximate implementation
 
 ```{r Profiling the final implementation, eval = F}
 #| cache: true
-#| echo: true
+#| echo: false
 set.seed(0)
 ppa_loworder <- poisson_prior_approximation(breaks = c(0, 1, 2, 3, 4), K = 4)
 loworder_sampler <- RandomVariable(log_f = ppa_loworder, log_f_prime = poisson_prior_log_f_prime, support = c(0,1)) %>% 
@@ -424,7 +423,6 @@ profvis::profvis(gauss_sampler(1e7, train = F), simplify = F)
 set.seed(NULL)
 
 ```
-## Profiling the approximate implementation
 
 ![Profvis for adaptive envelope](2_poorly_rendered_profile_adapt_optim.png)
 
@@ -479,7 +477,7 @@ NumericMatrix vmC2(NumericVector y, int n){
 ## Benchmarking the Vandermonde implementations
 
 ```{r Benchmarking Vandermonde Implementations}
-#| cache: false
+#| cache: true
 #| echo: false
 set.seed(0)
 y <- runif(100000)

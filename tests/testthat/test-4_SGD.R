@@ -51,6 +51,53 @@ test_that("cpp batch gradient results are consistent with r results", {
 
 })
 
+test_that("C++ sgd converges to the right value for a simple case", {
+
+  set.seed(0)
+  t <- 1
+  p <- 1
+
+  targets <- rnorm(p)
+  sll <- simple_logistic_loglikelihood(n = 2, p = p, beta = targets)
+
+  opt_target <- logistic_loglikelihood(
+    design = sll$X, response = sll$y,
+    penalty_matrix = matrix(0, nrow = ncol(sll$X), ncol = ncol(sll$X)),
+    lambda = 0
+  )
+
+  random_coef <- 1:t %>% purrr::map(.f = function(i) rnorm(p))
+
+  epochs <- 1
+  batch_size <- 1
+  lr <- polynomial_schedule(1, 0.5, 100)
+  opt <- Adam_Optimizer(
+    lr, batch_size = batch_size, beta_1 = 0.9, beta_2 = 0.95, eps = 1e-8, amsgrad = T)
+  opt <- Vanilla_Optimizer(lr, batch_size)
+
+  for (i in 1:t){
+    par_r <- SGD(
+      opt_target, opt,
+      init_par = random_coef[[i]],
+      stop_crit = epochs,
+      seed = 0,
+      debug = F
+    )
+
+    par_c <- SGD_CPP(
+      opt_target, opt,
+      init_par = random_coef[[i]],
+      stop_crit = epochs,
+      seed = 0,
+      debug = F
+    )
+
+    expect_equal(object=par_c, expected=par_r)
+  }
+
+  set.seed(NULL)
+})
+
 test_that("C++ sgd converges to the right value", {
 
   set.seed(0)

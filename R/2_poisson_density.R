@@ -53,8 +53,11 @@ polycoef <- function(n, x = poisson$x){
 #' @export
 #'
 #' @examples
-#' p1 <- poisson_prior_approximation()
-#' p1(c(0.2, 0.5, 0.8))
+#' p1 <- poisson_prior_approximation(K = 8, breaks = c(0,1,2,3,4), vm_method="c2")
+#' ppas <- purrr::map(.x = 1:64, .f = function(t) {poisson_prior_approximation(K=t)})
+#' y <- purrr::map_dbl(.x = ppas, .f = function(ppa) ppa(1)-poisson_prior_log_f(1))
+#'
+#' plot(y, z1-z2, type = "l")
 #'
 poisson_prior_approximation <- function(
     x = poisson$x, z = poisson$z, breaks = c(0,1,2,3,4), K = 4,

@@ -46,9 +46,18 @@ Rcpp::List SGD_CPP_PRIMITIVE(
     const bool &amsgrad,
     const int &seed
 ){
-  Rcpp::List coef_list (maxiter);
-  Rcpp::List obj_list (maxiter);
+  Rcpp::List coef_list (maxiter+1);
+  Rcpp::List obj_list (maxiter+1);
   double obj;
+  coef_list[0] = as<NumericVector>(wrap(coef)); // Breaks mutability of coef
+  obj = lllC(
+    design,
+    coef,
+    y,
+    pen_matrix,
+    lambda
+  );
+  obj_list[0] = 1 * obj;
   arma::vec grad;
   arma::vec rho = vec(coef.n_elem); rho.zeros();
   arma::vec nu = vec(coef.n_elem); nu.zeros();
@@ -90,7 +99,7 @@ Rcpp::List SGD_CPP_PRIMITIVE(
       coef = coef - lr[i] * rho / (sqrt(nu) + eps);
     }
 
-    coef_list[i] = as<NumericVector>(wrap(coef)); // Breaks mutability of coef
+    coef_list[i+1] = as<NumericVector>(wrap(coef)); // Breaks mutability of coef
     obj = lllC(
       design,
       coef,
@@ -98,7 +107,7 @@ Rcpp::List SGD_CPP_PRIMITIVE(
       pen_matrix,
       lambda
     );
-    obj_list[i] = 1 * obj;
+    obj_list[i+1] = 1 * obj;
 
     if (obj < objtarget){
       break;

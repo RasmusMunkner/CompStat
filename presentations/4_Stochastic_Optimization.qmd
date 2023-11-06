@@ -381,7 +381,7 @@ opt_target_horses <- logistic_loglikelihood(
   design = design,
   lambda = 1e-5
   )
-lr <- polynomial_schedule(0.1, 0.01, later = 100, p = 1)
+lr <- polynomial_schedule(0.2, 0.1, later = 100, p = 1)
 adam <- Adam_Optimizer(lr, batch_size = ceiling(nrow(horses)/4))
 trace <- SGD(
   opt_target_horses, adam, init_par = rep(0,opt_target_horses$n_param),
@@ -441,6 +441,7 @@ gridExtra::grid.arrange(grobs = list(p1, p2, p3, p4), ncol = 2)
 
 ```{r Profiling r SGD}
 #| cache: true
+
 
 set.seed(0)
 profvis::profvis({

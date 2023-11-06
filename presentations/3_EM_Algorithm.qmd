@@ -521,6 +521,7 @@ test_that("rc++ implementation is consistent", {
 ## Benchmarking performance
 ```{r Benchmark cpp}
 #| cache: true
+#| echo: true
   clear_cache <- function(mode = "r"){
     environment(Qfunc$grad)$cond_p_cache <<- NULL
     Qfunc$grad(t, cache = T, mode = mode)

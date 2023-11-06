@@ -71,7 +71,7 @@ Adam_Optimizer <- function(
   }
 
   CompStatOptimizer(
-    lr, batch_size, update_param, reset,
+    lr=lr, batch_size=batch_size, update_param=update_param, reset=reset,
     par = list(beta_1 = beta_1, beta_2 = beta_2, eps = eps, amsgrad = amsgrad)
     )
 }

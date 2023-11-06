@@ -35,7 +35,7 @@ logistic_loglikelihood <- function(
   }
 
   loglikelihood <- function(coef, batch = 1:nrow(design)){
-    eta <- exp(design[batch,] %*% coef)
+    eta <- exp(design[batch,,drop=F] %*% coef)
     p <- eta / (1 + eta)
     -mean(response[batch] * log(p) + (1-response[batch]) * log(1-p)) +
       lambda * t(coef) %*% penalty_matrix %*% coef
@@ -76,8 +76,14 @@ logistic_loglikelihood <- function(
 #'
 #' @examples
 #' diagmat(c(1,2,3))
-diagmat <- function(v){
-  m <- Matrix::Matrix(0, nrow = length(v), ncol = length(v))
-  diag(m) <- v
+#' diagmat(c(1,2,3), mode = 2)
+#' microbenchmark::microbenchmark(diagmat(rep(2,1e5)), diagmat(rep(2, 1e5), mode = 2))
+diagmat <- function(v, mode = 2){
+  if (mode == 1){
+    m <- Matrix::Matrix(0, nrow = length(v), ncol = length(v))
+    diag(m) <- v
+  } else {
+    m <- Matrix::Diagonal(x=v)
+  }
   m
 }

@@ -98,12 +98,11 @@ SGD <- function(
     # Apply minibatch gradient updates
     for (b in 1:batches_per_epoch){
       grad <- optimizable$grad(
-        par_before,
+        par_next,
         index_permutation[(1+(b-1)*batch_size):
-                            min(b*batch_size, optimizable$n_index)],
-        ...
+                            min(b*batch_size, optimizable$n_index)]
       )
-      par_next <- par_before - opt$lr(epoch) * opt$update_param(grad)
+      par_next <- par_next - opt$lr(epoch) * opt$update_param(grad)
     }
 
     # Tracing and keep track of objective function
@@ -202,8 +201,13 @@ SGD_CPP <- function(
     optimizer,
     init_par = NULL,
     stop_crit = 50,
-    seed = NULL
+    seed = NULL,
+    debug = F
     ){
+
+  if (debug){
+    browser()
+  }
 
   if (is.null(seed)){
     stop("Seed must be set for CPP implementation.")
